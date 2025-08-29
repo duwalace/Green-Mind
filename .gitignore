@@ -1,0 +1,47 @@
+# Node geral (frontend e backend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build/coverage
+frontend/build/
+frontend/coverage/
+frontend/.eslintcache
+backend/dist/
+backend/coverage/
+
+# Env (não commitar segredos)
+.env
+.env.*
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+backend/.env
+
+# Uploads (mantém a pasta com .gitkeep)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs
+logs/
+*.log
+backend/logs/
+
+# Temporários
+tmp/
+temp/
+.cache/
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+
+# SO (Windows/macOS)
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
