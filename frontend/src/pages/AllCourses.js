@@ -45,6 +45,8 @@ const AllCourses = () => {
   const [priceFilter, setPriceFilter] = useState('all');
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const API_BASE_URL = 'http://localhost:3001';
+
   useEffect(() => {
     const fetchCourses = async () => {
       try {
@@ -310,7 +312,7 @@ const AllCourses = () => {
                     <CardMedia
                       component="img"
                       height="200"
-                      image={course.image_url}
+                      image={course.image_url ? `${API_BASE_URL}${course.image_url}` : '/images/courses/default.jpg'}
                       alt={course.title}
                       sx={{ objectFit: 'cover' }}
                     />

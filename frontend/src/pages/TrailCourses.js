@@ -60,6 +60,8 @@ const TrailCourses = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [progress, setProgress] = useState({});
 
+  const API_BASE_URL = 'http://localhost:3001';
+
   const getTrailTheme = (title) => {
     switch (title?.toLowerCase()) {
       case 'água':
@@ -379,7 +381,7 @@ const TrailCourses = () => {
                     <CardMedia
                       component="img"
                       height="200"
-                      image={course.image_url}
+                      image={course.image_url ? `${API_BASE_URL}${course.image_url}` : '/images/courses/default.jpg'}
                       alt={course.title}
                       sx={{ objectFit: 'cover' }}
                     />
@@ -545,7 +547,7 @@ const TrailCourses = () => {
               <Grid container spacing={3}>
                 <Grid item xs={12} md={6}>
                   <img 
-                    src={selectedCourse.image_url} 
+                    src={selectedCourse.image_url ? `${API_BASE_URL}${selectedCourse.image_url}` : '/images/courses/default.jpg'} 
                     alt={selectedCourse.title}
                     style={{ width: '100%', borderRadius: 8 }}
                   />

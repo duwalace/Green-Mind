@@ -1,29 +1,46 @@
 import { createTheme } from '@mui/material/styles';
 
+// Paleta Padronizada - Green Mind Professional
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#2E7D32', // Verde escuro
-      light: '#4CAF50', // Verde médio
-      dark: '#1B5E20', // Verde mais escuro
+      main: '#2E7D32',      // Verde Principal
+      light: '#66BB6A',     // Verde Claro
+      dark: '#1B5E20',      // Verde Escuro
     },
     secondary: {
-      main: '#1976D2', // Azul
-      light: '#42A5F5',
-      dark: '#1565C0',
+      main: '#00897B',      // Teal Complementar
+      light: '#4DB6AC',     // Teal Claro
+      dark: '#00695C',      // Teal Escuro
     },
-    background: {
-      default: '#F5F5F5',
-      paper: '#FFFFFF',
-    },
-    success: {
-      main: '#4CAF50',
-    },
-    error: {
-      main: '#F44336',
+    info: {
+      main: '#0277BD',      // Azul Informativo
+      light: '#29B6F6',     // Azul Claro
+      dark: '#01579B',      // Azul Escuro
     },
     warning: {
-      main: '#FFC107',
+      main: '#F57C00',      // Laranja Âmbar
+      light: '#FFA726',     // Laranja Claro
+      dark: '#E65100',      // Laranja Escuro
+    },
+    success: {
+      main: '#2E7D32',      // Verde (mesma cor primária)
+      light: '#66BB6A',
+      dark: '#1B5E20',
+    },
+    error: {
+      main: '#D32F2F',      // Vermelho Suave
+      light: '#EF5350',
+      dark: '#C62828',
+    },
+    background: {
+      default: '#FAFAFA',   // Fundo Claro
+      paper: '#FFFFFF',     // Papel Branco
+    },
+    text: {
+      primary: '#424242',   // Texto Principal
+      secondary: '#757575', // Texto Secundário
+      disabled: '#9E9E9E',  // Texto Desabilitado
     },
   },
   typography: {

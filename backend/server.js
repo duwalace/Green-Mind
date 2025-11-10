@@ -232,6 +232,117 @@ app.put('/api/admin/users/:userId/make-admin', authenticateToken, isAdmin, async
   }
 });
 
+// Rota para remover privilégios de admin (apenas admin)
+app.put('/api/admin/users/:userId/remove-admin', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Prevenir que o usuário remova seus próprios privilégios
+    if (parseInt(userId) === req.user.id) {
+      return res.status(400).json({ message: 'Você não pode remover seus próprios privilégios de administrador' });
+    }
+    
+    await pool.execute(
+      'UPDATE users SET is_admin = FALSE WHERE id = ?',
+      [userId]
+    );
+
+    res.json({ message: 'Privilégios de administrador removidos com sucesso' });
+  } catch (error) {
+    console.error('Erro ao remover privilégios:', error);
+    res.status(500).json({ message: 'Erro ao remover privilégios' });
+  }
+});
+
+// Rota para deletar usuário (apenas admin)
+app.delete('/api/admin/users/:userId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Prevenir que o usuário delete a si mesmo
+    if (parseInt(userId) === req.user.id) {
+      return res.status(400).json({ message: 'Você não pode deletar sua própria conta' });
+    }
+    
+    await pool.execute('DELETE FROM users WHERE id = ?', [userId]);
+
+    res.json({ message: 'Usuário deletado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar usuário:', error);
+    res.status(500).json({ message: 'Erro ao deletar usuário' });
+  }
+});
+
+// ========== ROTAS DE RELATÓRIOS ==========
+
+// Estatísticas gerais do dashboard
+app.get('/api/admin/statistics', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    // Total de usuários
+    const [usersCount] = await pool.execute('SELECT COUNT(*) as count FROM users');
+    
+    // Total de cursos
+    const [coursesCount] = await pool.execute('SELECT COUNT(*) as count FROM courses');
+    
+    // Total de trilhas
+    const [trailsCount] = await pool.execute('SELECT COUNT(*) as count FROM trails');
+    
+    // Total de aulas
+    const [lessonsCount] = await pool.execute('SELECT COUNT(*) as count FROM lessons');
+    
+    // Usuários ativos (com progresso nos últimos 30 dias)
+    const [activeUsers] = await pool.execute(`
+      SELECT COUNT(DISTINCT user_id) as count 
+      FROM user_course_progress 
+      WHERE last_accessed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    `);
+    
+    // Taxa de conclusão
+    const [completionRate] = await pool.execute(`
+      SELECT 
+        ROUND((COUNT(CASE WHEN is_completed = TRUE THEN 1 END) * 100.0 / COUNT(*)), 2) as rate
+      FROM user_course_progress
+    `);
+
+    res.json({
+      totalUsers: usersCount[0].count,
+      totalCourses: coursesCount[0].count,
+      totalTrails: trailsCount[0].count,
+      totalLessons: lessonsCount[0].count,
+      activeUsers: activeUsers[0].count,
+      completionRate: completionRate[0].rate || 0
+    });
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    res.status(500).json({ message: 'Erro ao buscar estatísticas' });
+  }
+});
+
+// Atividades recentes
+app.get('/api/admin/recent-activities', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const [activities] = await pool.execute(`
+      SELECT 
+        u.name as user_name,
+        u.avatar as user_avatar,
+        c.title as course_title,
+        ucp.last_accessed_at,
+        ucp.is_completed,
+        ucp.progress_percentage
+      FROM user_course_progress ucp
+      JOIN users u ON ucp.user_id = u.id
+      JOIN courses c ON ucp.course_id = c.id
+      ORDER BY ucp.last_accessed_at DESC
+      LIMIT 10
+    `);
+
+    res.json({ activities });
+  } catch (error) {
+    console.error('Erro ao buscar atividades recentes:', error);
+    res.status(500).json({ message: 'Erro ao buscar atividades recentes' });
+  }
+});
+
 // Rota para listar todas as trilhas
 app.get('/api/trails', async (req, res) => {
   try {
@@ -242,6 +353,88 @@ app.get('/api/trails', async (req, res) => {
   } catch (error) {
     console.error('Erro ao listar trilhas:', error);
     res.status(500).json({ message: 'Erro ao listar trilhas' });
+  }
+});
+
+// Criar nova trilha (apenas admin)
+app.post('/api/trails', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { title, description, difficulty_level, duration_hours, image_url, status } = req.body;
+    
+    if (!title || !description) {
+      return res.status(400).json({ message: 'Título e descrição são obrigatórios' });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO trails (title, description, difficulty_level, duration_hours, image_url, status) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        title,
+        description,
+        difficulty_level || 'beginner',
+        duration_hours || 10,
+        image_url || null,
+        status || 'published'
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Trilha criada com sucesso',
+      trailId: result.insertId
+    });
+  } catch (error) {
+    console.error('Erro ao criar trilha:', error);
+    res.status(500).json({ message: 'Erro ao criar trilha' });
+  }
+});
+
+// Atualizar trilha (apenas admin)
+app.put('/api/trails/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, difficulty_level, duration_hours, image_url, status } = req.body;
+    
+    if (!title || !description) {
+      return res.status(400).json({ message: 'Título e descrição são obrigatórios' });
+    }
+
+    await pool.execute(
+      `UPDATE trails SET 
+        title = ?,
+        description = ?,
+        difficulty_level = ?,
+        duration_hours = ?,
+        image_url = ?,
+        status = ?,
+        updated_at = NOW()
+      WHERE id = ?`,
+      [
+        title,
+        description,
+        difficulty_level || 'beginner',
+        duration_hours || 10,
+        image_url || null,
+        status || 'published',
+        id
+      ]
+    );
+
+    res.json({ message: 'Trilha atualizada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar trilha:', error);
+    res.status(500).json({ message: 'Erro ao atualizar trilha' });
+  }
+});
+
+// Deletar trilha (apenas admin)
+app.delete('/api/trails/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.execute('DELETE FROM trails WHERE id = ?', [id]);
+    res.json({ message: 'Trilha deletada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar trilha:', error);
+    res.status(500).json({ message: 'Erro ao deletar trilha' });
   }
 });
 
@@ -341,6 +534,52 @@ app.get('/api/courses/:courseId', async (req, res) => {
   }
 });
 
+// Rota para obter as aulas de um curso específico (PÚBLICA - apenas publicadas)
+app.get('/api/courses/:courseId/lessons', async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    // Buscar aulas publicadas do curso
+    const [lessons] = await pool.execute(
+      `SELECT id, course_id, title, description, content, video_url, 
+              duration_minutes, sequence_order 
+       FROM lessons 
+       WHERE course_id = ? AND status = 'published'
+       ORDER BY sequence_order ASC`,
+      [courseId]
+    );
+
+    res.json({ lessons });
+  } catch (error) {
+    console.error('Erro ao buscar aulas do curso:', error);
+    res.status(500).json({ message: 'Erro ao buscar aulas do curso' });
+  }
+});
+
+// Rota ADMIN para obter TODAS as aulas de um curso (draft, published, archived)
+app.get('/api/admin/courses/:courseId/lessons', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    // Buscar TODAS as aulas do curso (sem filtro de status)
+    const [lessons] = await pool.execute(
+      `SELECT id, course_id, title, description, content, video_url, 
+              duration_minutes, sequence_order, status, created_at, updated_at
+       FROM lessons 
+       WHERE course_id = ?
+       ORDER BY sequence_order ASC`,
+      [courseId]
+    );
+
+    console.log(`Admin buscando aulas do curso ${courseId}: encontradas ${lessons.length} aulas`);
+
+    res.json({ lessons });
+  } catch (error) {
+    console.error('Erro ao buscar aulas do curso (admin):', error);
+    res.status(500).json({ message: 'Erro ao buscar aulas do curso' });
+  }
+});
+
 // Rota para obter o progresso do usuário em um curso
 app.get('/api/courses/:courseId/progress', authenticateToken, async (req, res) => {
   try {
@@ -359,18 +598,75 @@ app.get('/api/courses/:courseId/progress', authenticateToken, async (req, res) =
   }
 });
 
-// Criar novo curso
-app.post('/api/courses', async (req, res) => {
-  try {
-    const { title, description, trail_id } = req.body;
-    if (!title || !description || !trail_id) {
-      return res.status(400).json({ message: 'Todos os campos são obrigatórios' });
+// Configuração do multer para upload de imagens de cursos
+const courseStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/courses/');
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `course_${Date.now()}${ext}`);
+  }
+});
+const uploadCourse = multer({ 
+  storage: courseStorage,
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb('Erro: Apenas imagens são permitidas!');
     }
-    await pool.execute(
-      'INSERT INTO courses (title, description, trail_id, created_at) VALUES (?, ?, ?, NOW())',
-      [title, description, trail_id]
+  }
+});
+
+// Criar novo curso
+app.post('/api/admin/courses', authenticateToken, isAdmin, uploadCourse.single('image'), async (req, res) => {
+  try {
+    const { 
+      title, 
+      description, 
+      trail_id, 
+      instructor, 
+      duration_minutes, 
+      difficulty_level,
+      learning_objectives,
+      is_free,
+      price
+    } = req.body;
+    
+    if (!title || !description || !trail_id) {
+      return res.status(400).json({ message: 'Título, descrição e trilha são obrigatórios' });
+    }
+
+    const image_url = req.file ? `/uploads/courses/${req.file.filename}` : null;
+
+    const [result] = await pool.execute(
+      `INSERT INTO courses (
+        title, description, trail_id, image_url, instructor, 
+        duration_minutes, difficulty_level, learning_objectives,
+        is_free, price, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', NOW())`,
+      [
+        title, 
+        description, 
+        trail_id,
+        image_url,
+        instructor || 'Green Mind Team',
+        duration_minutes || 60,
+        difficulty_level || 'beginner',
+        learning_objectives,
+        is_free !== undefined ? is_free : true,
+        price || 0.00
+      ]
     );
-    res.status(201).json({ message: 'Curso criado com sucesso' });
+
+    res.status(201).json({ 
+      message: 'Curso criado com sucesso',
+      courseId: result.insertId 
+    });
   } catch (error) {
     console.error('Erro ao criar curso:', error);
     res.status(500).json({ message: 'Erro ao criar curso' });
@@ -378,21 +674,74 @@ app.post('/api/courses', async (req, res) => {
 });
 
 // Editar curso existente
-app.put('/api/courses/:id', async (req, res) => {
+app.put('/api/admin/courses/:id', authenticateToken, isAdmin, uploadCourse.single('image'), async (req, res) => {
   try {
-    const { title, description, trail_id } = req.body;
+    const { 
+      title, 
+      description, 
+      trail_id, 
+      instructor, 
+      duration_minutes, 
+      difficulty_level,
+      learning_objectives,
+      is_free,
+      price
+    } = req.body;
     const { id } = req.params;
+    
     if (!title || !description || !trail_id) {
-      return res.status(400).json({ message: 'Todos os campos são obrigatórios' });
+      return res.status(400).json({ message: 'Título, descrição e trilha são obrigatórios' });
     }
-    await pool.execute(
-      'UPDATE courses SET title = ?, description = ?, trail_id = ? WHERE id = ?',
-      [title, description, trail_id, id]
-    );
+
+    let updateQuery = `UPDATE courses SET 
+      title = ?, 
+      description = ?, 
+      trail_id = ?,
+      instructor = ?,
+      duration_minutes = ?,
+      difficulty_level = ?,
+      learning_objectives = ?,
+      is_free = ?,
+      price = ?`;
+    
+    const params = [
+      title, 
+      description, 
+      trail_id,
+      instructor,
+      duration_minutes,
+      difficulty_level,
+      learning_objectives,
+      is_free,
+      price
+    ];
+
+    if (req.file) {
+      updateQuery += `, image_url = ?`;
+      params.push(`/uploads/courses/${req.file.filename}`);
+    }
+
+    updateQuery += ` WHERE id = ?`;
+    params.push(id);
+
+    await pool.execute(updateQuery, params);
+
     res.json({ message: 'Curso atualizado com sucesso' });
   } catch (error) {
     console.error('Erro ao atualizar curso:', error);
     res.status(500).json({ message: 'Erro ao atualizar curso' });
+  }
+});
+
+// Deletar curso
+app.delete('/api/admin/courses/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.execute('DELETE FROM courses WHERE id = ?', [id]);
+    res.json({ message: 'Curso deletado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar curso:', error);
+    res.status(500).json({ message: 'Erro ao deletar curso' });
   }
 });
 
@@ -427,9 +776,11 @@ app.post('/api/admin/lessons', authenticateToken, isAdmin, async (req, res) => {
       status
     } = req.body;
 
-    // Validação básica
-    if (!course_id || !title || !description || !content || !duration_minutes || !sequence_order) {
-      return res.status(400).json({ message: 'Todos os campos obrigatórios devem ser preenchidos' });
+    console.log('Dados recebidos para criar aula:', req.body);
+
+    // Validação básica - apenas campos essenciais
+    if (!course_id || !title || !description) {
+      return res.status(400).json({ message: 'Curso ID, título e descrição são obrigatórios' });
     }
 
     // Verificar se o curso existe
@@ -452,13 +803,15 @@ app.post('/api/admin/lessons', authenticateToken, isAdmin, async (req, res) => {
         course_id,
         title,
         description,
-        content,
+        content || description, // Se content não for fornecido, usa description
         video_url || null,
-        duration_minutes,
-        sequence_order,
+        duration_minutes || 30, // Valor padrão
+        sequence_order || 1, // Valor padrão
         status || 'draft'
       ]
     );
+
+    console.log('Aula criada com ID:', result.insertId);
 
     // Buscar a aula criada
     const [newLesson] = await pool.execute(
@@ -466,10 +819,16 @@ app.post('/api/admin/lessons', authenticateToken, isAdmin, async (req, res) => {
       [result.insertId]
     );
 
-    res.status(201).json({ lesson: newLesson[0] });
+    res.status(201).json({ 
+      message: 'Aula criada com sucesso',
+      lesson: newLesson[0] 
+    });
   } catch (error) {
     console.error('Erro ao criar aula:', error);
-    res.status(500).json({ message: 'Erro ao criar aula' });
+    res.status(500).json({ 
+      message: 'Erro ao criar aula',
+      error: error.message 
+    });
   }
 });
 
@@ -486,6 +845,8 @@ app.put('/api/admin/lessons/:lessonId', authenticateToken, isAdmin, async (req, 
       sequence_order,
       status
     } = req.body;
+
+    console.log('Atualizando aula ID:', lessonId, 'com dados:', req.body);
 
     // Verificar se a aula existe
     const [lessons] = await pool.execute(
@@ -511,14 +872,16 @@ app.put('/api/admin/lessons/:lessonId', authenticateToken, isAdmin, async (req, 
       [
         title,
         description,
-        content,
+        content || description, // Se content não for fornecido, usa description
         video_url || null,
-        duration_minutes,
-        sequence_order,
-        status,
+        duration_minutes || 30,
+        sequence_order || 1,
+        status || 'draft',
         lessonId
       ]
     );
+
+    console.log('Aula atualizada com sucesso');
 
     // Buscar a aula atualizada
     const [updatedLesson] = await pool.execute(
@@ -526,10 +889,16 @@ app.put('/api/admin/lessons/:lessonId', authenticateToken, isAdmin, async (req, 
       [lessonId]
     );
 
-    res.json({ lesson: updatedLesson[0] });
+    res.json({ 
+      message: 'Aula atualizada com sucesso',
+      lesson: updatedLesson[0] 
+    });
   } catch (error) {
     console.error('Erro ao atualizar aula:', error);
-    res.status(500).json({ message: 'Erro ao atualizar aula' });
+    res.status(500).json({ 
+      message: 'Erro ao atualizar aula',
+      error: error.message 
+    });
   }
 });
 
@@ -548,13 +917,177 @@ app.delete('/api/admin/lessons/:lessonId', authenticateToken, isAdmin, async (re
       return res.status(404).json({ message: 'Aula não encontrada' });
     }
 
-    // Excluir aula
+    // Excluir aula (conteúdos serão deletados automaticamente via CASCADE)
     await pool.execute('DELETE FROM lessons WHERE id = ?', [lessonId]);
 
     res.json({ message: 'Aula excluída com sucesso' });
   } catch (error) {
     console.error('Erro ao excluir aula:', error);
     res.status(500).json({ message: 'Erro ao excluir aula' });
+  }
+});
+
+// ========== ROTAS DE CONTEÚDOS DE AULAS ==========
+
+// Listar conteúdos de uma aula
+app.get('/api/lessons/:lessonId/contents', async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+
+    const [contents] = await pool.execute(
+      `SELECT * FROM lesson_contents 
+       WHERE lesson_id = ? 
+       ORDER BY content_order ASC`,
+      [lessonId]
+    );
+
+    res.json({ contents });
+  } catch (error) {
+    console.error('Erro ao buscar conteúdos:', error);
+    res.status(500).json({ message: 'Erro ao buscar conteúdos' });
+  }
+});
+
+// Criar conteúdo para uma aula (apenas admin)
+app.post('/api/admin/lessons/:lessonId/contents', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+    const {
+      content_type,
+      title,
+      content_order,
+      video_url,
+      video_duration,
+      text_content,
+      exercise_type,
+      exercise_question,
+      exercise_options,
+      exercise_correct_answer
+    } = req.body;
+
+    if (!content_type || !title) {
+      return res.status(400).json({ message: 'Tipo de conteúdo e título são obrigatórios' });
+    }
+
+    // Verificar se a aula existe
+    const [lessons] = await pool.execute(
+      'SELECT id FROM lessons WHERE id = ?',
+      [lessonId]
+    );
+
+    if (lessons.length === 0) {
+      return res.status(404).json({ message: 'Aula não encontrada' });
+    }
+
+    // Inserir conteúdo
+    const [result] = await pool.execute(
+      `INSERT INTO lesson_contents (
+        lesson_id, content_type, title, content_order,
+        video_url, video_duration, text_content,
+        exercise_type, exercise_question, exercise_options, exercise_correct_answer
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        lessonId,
+        content_type,
+        title,
+        content_order || 0,
+        video_url || null,
+        video_duration || null,
+        text_content || null,
+        exercise_type || null,
+        exercise_question || null,
+        exercise_options ? JSON.stringify(exercise_options) : null,
+        exercise_correct_answer || null
+      ]
+    );
+
+    res.status(201).json({ 
+      message: 'Conteúdo criado com sucesso',
+      contentId: result.insertId 
+    });
+  } catch (error) {
+    console.error('Erro ao criar conteúdo:', error);
+    res.status(500).json({ message: 'Erro ao criar conteúdo' });
+  }
+});
+
+// Atualizar conteúdo de aula (apenas admin)
+app.put('/api/admin/lesson-contents/:contentId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { contentId } = req.params;
+    const {
+      title,
+      content_order,
+      video_url,
+      video_duration,
+      text_content,
+      exercise_type,
+      exercise_question,
+      exercise_options,
+      exercise_correct_answer
+    } = req.body;
+
+    await pool.execute(
+      `UPDATE lesson_contents SET
+        title = ?,
+        content_order = ?,
+        video_url = ?,
+        video_duration = ?,
+        text_content = ?,
+        exercise_type = ?,
+        exercise_question = ?,
+        exercise_options = ?,
+        exercise_correct_answer = ?
+      WHERE id = ?`,
+      [
+        title,
+        content_order,
+        video_url || null,
+        video_duration || null,
+        text_content || null,
+        exercise_type || null,
+        exercise_question || null,
+        exercise_options ? JSON.stringify(exercise_options) : null,
+        exercise_correct_answer || null,
+        contentId
+      ]
+    );
+
+    res.json({ message: 'Conteúdo atualizado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar conteúdo:', error);
+    res.status(500).json({ message: 'Erro ao atualizar conteúdo' });
+  }
+});
+
+// Deletar conteúdo de aula (apenas admin)
+app.delete('/api/admin/lesson-contents/:contentId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { contentId } = req.params;
+
+    await pool.execute('DELETE FROM lesson_contents WHERE id = ?', [contentId]);
+
+    res.json({ message: 'Conteúdo deletado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar conteúdo:', error);
+    res.status(500).json({ message: 'Erro ao deletar conteúdo' });
+  }
+});
+
+// Contar aulas por curso
+app.get('/api/courses/:courseId/lessons/count', async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    const [result] = await pool.execute(
+      'SELECT COUNT(*) as count FROM lessons WHERE course_id = ?',
+      [courseId]
+    );
+
+    res.json({ count: result[0].count });
+  } catch (error) {
+    console.error('Erro ao contar aulas:', error);
+    res.status(500).json({ message: 'Erro ao contar aulas' });
   }
 });
 

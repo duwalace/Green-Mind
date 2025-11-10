@@ -23,6 +23,7 @@ const About = lazy(() => import('./pages/About'));
 const TrailCourses = lazy(() => import('./pages/TrailCourses'));
 const AllCourses = lazy(() => import('./pages/AllCourses'));
 const CourseDetails = lazy(() => import('./pages/CourseDetails'));
+const Aulas = lazy(() => import('./pages/Aulas'));
 const AdminLessons = lazy(() => import('./pages/AdminLessons'));
 
 // Componente de loading
@@ -57,7 +58,8 @@ const App = () => {
             <Route path="/trails" element={<TrailSelection />} />
             <Route path="/trails/:trailId" element={<TrailCourses />} />
             <Route path="/courses" element={<AllCourses />} />
-            <Route path="/courses/:courseId" element={<TrailLevel />} />
+            <Route path="/courses/:courseId/start" element={<Aulas />} />
+            <Route path="/courses/:courseId/level" element={<TrailLevel />} />
             <Route path="/courses/:id" element={<CourseDetails />} />
             <Route path="/dashboard/*" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />

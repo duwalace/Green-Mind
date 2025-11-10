@@ -7,6 +7,7 @@ import AdminCourses from './AdminCourses';
 import AdminTrails from './AdminTrails';
 import AdminUsers from './AdminUsers';
 import AdminLessons from './AdminLessons';
+import DashboardReports from './DashboardReports';
 
 const Dashboard = () => {
   return (
@@ -21,6 +22,7 @@ const Dashboard = () => {
             <Route path="/trails" element={<AdminTrails />} />
             <Route path="/lessons" element={<AdminLessons />} />
             <Route path="/users" element={<AdminUsers />} />
+            <Route path="/reports" element={<DashboardReports />} />
             <Route path="*" element={<Navigate to="/dashboard" />} />
           </Routes>
         </Box>

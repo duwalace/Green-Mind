@@ -81,7 +81,7 @@ const DashboardSidebar = () => {
       display: 'flex', 
       flexDirection: 'column', 
       height: '100%',
-      background: 'linear-gradient(180deg, #1B5E20 0%, #2E7D32 100%)',
+      background: 'linear-gradient(180deg, #01579B 0%, #0277BD 100%)',
       color: '#fff'
     }}>
       {/* Header */}
@@ -100,7 +100,7 @@ const DashboardSidebar = () => {
               width: 40, 
               height: 40, 
               border: '2px solid rgba(255,255,255,0.2)',
-              bgcolor: '#4CAF50'
+              bgcolor: '#29B6F6'
             }}
           />
           {!collapsed && (
