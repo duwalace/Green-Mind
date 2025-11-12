@@ -29,7 +29,10 @@ import {
   Paper,
   Stack,
   alpha,
-  Tooltip
+  Tooltip,
+  Radio,
+  RadioGroup,
+  FormControlLabel
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -43,7 +46,8 @@ import {
   School as SchoolIcon,
   CheckCircle as CheckIcon,
   AccessTime as TimeIcon,
-  Category as CategoryIcon
+  Category as CategoryIcon,
+  CloudUpload as CloudUploadIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -162,6 +166,10 @@ const AdminLessons = () => {
     exercise_options: [],
     exercise_correct_answer: ''
   });
+
+  const [videoFile, setVideoFile] = useState(null);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const API_BASE_URL = 'http://localhost:3001/api';
 
@@ -309,6 +317,105 @@ const AdminLessons = () => {
     }
   };
 
+  const handleVideoFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    console.log('Arquivo selecionado:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    });
+
+    // Validar tamanho (máx 500MB)
+    if (file.size > 500 * 1024 * 1024) {
+      setError('O vídeo deve ter no máximo 500MB');
+      return;
+    }
+
+    setVideoFile(file);
+    setUploadingVideo(true);
+    setUploadProgress(0);
+
+    try {
+      const token = localStorage.getItem('token');
+      console.log('Iniciando upload do vídeo...');
+      
+      const formData = new FormData();
+      formData.append('video', file);
+
+      console.log('FormData criado, enviando para:', `${API_BASE_URL}/admin/upload/lesson-video`);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/upload/lesson-video`,
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          },
+          onUploadProgress: (progressEvent) => {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+            console.log(`Upload: ${percentCompleted}%`);
+          }
+        }
+      );
+
+      console.log('Resposta do servidor:', response.data);
+
+      // Atualizar o campo video_url com a URL do vídeo enviado
+      setContentForm({
+        ...contentForm,
+        video_url: response.data.videoUrl
+      });
+      
+      setSuccess('Vídeo enviado com sucesso!');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      console.error('Erro detalhado ao fazer upload do vídeo:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        headers: err.response?.headers
+      });
+      
+      const errorMessage = err.response?.data?.message || err.message || 'Erro ao fazer upload do vídeo';
+      setError(errorMessage);
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setUploadingVideo(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handleAddOption = () => {
+    const newOption = `Opção ${contentForm.exercise_options.length + 1}`;
+    setContentForm({
+      ...contentForm,
+      exercise_options: [...contentForm.exercise_options, newOption]
+    });
+  };
+
+  const handleUpdateOption = (index, value) => {
+    const updatedOptions = [...contentForm.exercise_options];
+    updatedOptions[index] = value;
+    setContentForm({
+      ...contentForm,
+      exercise_options: updatedOptions
+    });
+  };
+
+  const handleRemoveOption = (index) => {
+    const updatedOptions = contentForm.exercise_options.filter((_, i) => i !== index);
+    setContentForm({
+      ...contentForm,
+      exercise_options: updatedOptions,
+      // Se a resposta correta era a opção removida, limpar
+      exercise_correct_answer: contentForm.exercise_correct_answer === index.toString() ? '' : contentForm.exercise_correct_answer
+    });
+  };
+
   const handleOpenContentDialog = (contentType) => {
     setCurrentContentType(contentType);
     setContentForm({
@@ -322,6 +429,7 @@ const AdminLessons = () => {
       exercise_options: [],
       exercise_correct_answer: ''
     });
+    setVideoFile(null);
     setOpenContentDialog(true);
   };
 
@@ -874,13 +982,65 @@ const AdminLessons = () => {
             {currentContentType === 'video' && (
               <>
                 <Grid item xs={12}>
+                  <Box sx={{ 
+                    p: 3, 
+                    border: '2px dashed',
+                    borderColor: 'grey.300',
+                    borderRadius: 2,
+                    textAlign: 'center',
+                    bgcolor: 'grey.50'
+                  }}>
+                    <Typography variant="subtitle2" gutterBottom fontWeight={700}>
+                      Fazer Upload de Vídeo do PC
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      component="label"
+                      startIcon={<CloudUploadIcon />}
+                      disabled={uploadingVideo}
+                      sx={{ mt: 1, mb: 1 }}
+                    >
+                      {uploadingVideo ? 'Enviando...' : 'Escolher Vídeo'}
+                      <input
+                        type="file"
+                        hidden
+                        accept="video/*"
+                        onChange={handleVideoFileChange}
+                      />
+                    </Button>
+                    {uploadingVideo && (
+                      <Box sx={{ mt: 2 }}>
+                        <CircularProgress variant="determinate" value={uploadProgress} />
+                        <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                          {uploadProgress}% enviado
+                        </Typography>
+                      </Box>
+                    )}
+                    {videoFile && !uploadingVideo && (
+                      <Typography variant="body2" color="success.main" sx={{ mt: 1 }}>
+                        ✓ {videoFile.name}
+                      </Typography>
+                    )}
+                    <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
+                      Formatos: MP4, AVI, MOV, WMV, FLV, WEBM, MKV (máx. 500MB)
+                    </Typography>
+                  </Box>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }}>
+                    <Chip label="OU" size="small" />
+                  </Divider>
+                </Grid>
+
+                <Grid item xs={12}>
                   <TextField
-                    label="URL do Vídeo"
+                    label="URL do Vídeo (YouTube, Vimeo, etc)"
                     value={contentForm.video_url}
                     onChange={(e) => setContentForm({ ...contentForm, video_url: e.target.value })}
                     fullWidth
                     placeholder="https://www.youtube.com/watch?v=..."
-                    helperText="Cole o link do YouTube, Vimeo ou outro serviço"
+                    helperText="Cole o link do YouTube, Vimeo ou utilize o upload acima"
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
@@ -931,7 +1091,14 @@ const AdminLessons = () => {
                     <Select
                       value={contentForm.exercise_type}
                       label="Tipo de Exercício"
-                      onChange={(e) => setContentForm({ ...contentForm, exercise_type: e.target.value })}
+                      onChange={(e) => {
+                        setContentForm({ 
+                          ...contentForm, 
+                          exercise_type: e.target.value,
+                          exercise_options: e.target.value === 'multiple_choice' ? ['Opção 1', 'Opção 2'] : [],
+                          exercise_correct_answer: ''
+                        });
+                      }}
                       sx={{ borderRadius: 2 }}
                     >
                       <MenuItem value="text_answer">Resposta em Texto</MenuItem>
@@ -940,17 +1107,98 @@ const AdminLessons = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    label="Resposta Correta (para referência)"
-                    value={contentForm.exercise_correct_answer}
-                    onChange={(e) => setContentForm({ ...contentForm, exercise_correct_answer: e.target.value })}
-                    fullWidth
-                    multiline
-                    rows={2}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                  />
-                </Grid>
+
+                {/* Múltipla Escolha */}
+                {contentForm.exercise_type === 'multiple_choice' && (
+                  <Grid item xs={12}>
+                    <Paper elevation={0} sx={{ p: 3, bgcolor: 'grey.50', borderRadius: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="subtitle2" fontWeight={700}>
+                          Opções de Resposta
+                        </Typography>
+                        <Button
+                          size="small"
+                          startIcon={<AddIcon />}
+                          onClick={handleAddOption}
+                          sx={{ borderRadius: 2, textTransform: 'none' }}
+                        >
+                          Adicionar Opção
+                        </Button>
+                      </Box>
+
+                      <RadioGroup
+                        value={contentForm.exercise_correct_answer}
+                        onChange={(e) => setContentForm({ ...contentForm, exercise_correct_answer: e.target.value })}
+                      >
+                        {contentForm.exercise_options.map((option, index) => (
+                          <Paper
+                            key={index}
+                            elevation={1}
+                            sx={{
+                              p: 2,
+                              mb: 2,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 2,
+                              bgcolor: 'white'
+                            }}
+                          >
+                            <FormControlLabel
+                              value={index.toString()}
+                              control={<Radio />}
+                              label=""
+                              sx={{ m: 0 }}
+                            />
+                            <TextField
+                              fullWidth
+                              size="small"
+                              value={option}
+                              onChange={(e) => handleUpdateOption(index, e.target.value)}
+                              placeholder={`Opção ${index + 1}`}
+                              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                            />
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleRemoveOption(index)}
+                              disabled={contentForm.exercise_options.length <= 2}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Paper>
+                        ))}
+                      </RadioGroup>
+
+                      {contentForm.exercise_options.length === 0 && (
+                        <Alert severity="info" sx={{ borderRadius: 2 }}>
+                          Clique em "Adicionar Opção" para criar as alternativas da questão
+                        </Alert>
+                      )}
+
+                      {contentForm.exercise_options.length > 0 && !contentForm.exercise_correct_answer && (
+                        <Alert severity="warning" sx={{ mt: 2, borderRadius: 2 }}>
+                          Selecione qual é a resposta correta clicando no botão de rádio
+                        </Alert>
+                      )}
+                    </Paper>
+                  </Grid>
+                )}
+
+                {/* Resposta em Texto ou Upload de Arquivo */}
+                {contentForm.exercise_type !== 'multiple_choice' && (
+                  <Grid item xs={12}>
+                    <TextField
+                      label="Resposta Correta (para referência)"
+                      value={contentForm.exercise_correct_answer}
+                      onChange={(e) => setContentForm({ ...contentForm, exercise_correct_answer: e.target.value })}
+                      fullWidth
+                      multiline
+                      rows={2}
+                      helperText={contentForm.exercise_type === 'file_upload' ? 'Descreva o que o aluno deve enviar' : 'Digite a resposta esperada'}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    />
+                  </Grid>
+                )}
               </>
             )}
           </Grid>

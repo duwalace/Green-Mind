@@ -40,7 +40,8 @@ import {
   Explore as ExploreIcon,
   Star as StarIcon,
   Timeline as TimelineIcon,
-  CheckCircle as CheckIcon
+  CheckCircle as CheckIcon,
+  CloudUpload as CloudUploadIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -318,6 +319,8 @@ const AdminTrails = () => {
     image_url: '',
     status: 'published'
   });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
 
   const API_BASE_URL = 'http://localhost:3001/api';
 
@@ -338,6 +341,23 @@ const AdminTrails = () => {
     fetchTrails();
   }, []);
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError('A imagem deve ter no máximo 5MB');
+        return;
+      }
+      
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleOpen = (trail = null) => {
     if (trail) {
       setEditTrail(trail);
@@ -349,6 +369,7 @@ const AdminTrails = () => {
         image_url: trail.image_url || '',
         status: trail.status || 'published'
       });
+      setImagePreview(trail.image_url || null);
     } else {
       setEditTrail(null);
       setForm({
@@ -359,7 +380,9 @@ const AdminTrails = () => {
         image_url: '',
         status: 'published'
       });
+      setImagePreview(null);
     }
+    setImageFile(null);
     setError(null);
     setSuccess(null);
     setOpen(true);
@@ -387,13 +410,43 @@ const AdminTrails = () => {
       }
 
       const token = localStorage.getItem('token');
-      const headers = { Authorization: `Bearer ${token}` };
+      
+      // Se houver uma imagem selecionada, fazer upload primeiro
+      let imageUrl = form.image_url;
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append('image', imageFile);
+
+        const uploadResponse = await axios.post(
+          `${API_BASE_URL}/admin/upload/course-image`, // Reutilizar a mesma rota
+          formData,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'multipart/form-data'
+            }
+          }
+        );
+
+        imageUrl = uploadResponse.data.imageUrl;
+      }
+
+      // Preparar dados da trilha
+      const trailData = {
+        ...form,
+        image_url: imageUrl
+      };
+
+      const headers = { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
 
       if (editTrail) {
-        await axios.put(`${API_BASE_URL}/trails/${editTrail.id}`, form, { headers });
+        await axios.put(`${API_BASE_URL}/trails/${editTrail.id}`, trailData, { headers });
         setSuccess('Trilha atualizada com sucesso!');
       } else {
-        await axios.post(`${API_BASE_URL}/trails`, form, { headers });
+        await axios.post(`${API_BASE_URL}/trails`, trailData, { headers });
         setSuccess('Trilha criada com sucesso!');
       }
 
@@ -717,17 +770,76 @@ const AdminTrails = () => {
               />
             </Grid>
 
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="URL da Imagem"
-                name="image_url"
-                value={form.image_url}
-                onChange={handleChange}
-                fullWidth
-                placeholder="/images/trails/..."
-                helperText="Caminho relativo ou URL completa da imagem"
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              />
+            <Grid item xs={12}>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="subtitle2" gutterBottom fontWeight={700}>
+                  Imagem da Trilha
+                </Typography>
+                {imagePreview ? (
+                  <motion.div
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                  >
+                    <Card sx={{ maxWidth: 400, mx: 'auto', mb: 2, borderRadius: 3, overflow: 'hidden' }}>
+                      <CardMedia
+                        component="img"
+                        height="200"
+                        image={imagePreview}
+                        alt="Preview"
+                      />
+                    </Card>
+                  </motion.div>
+                ) : (
+                  <Box
+                    sx={{
+                      maxWidth: 400,
+                      height: 200,
+                      mx: 'auto',
+                      mb: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: 'grey.50',
+                      border: '3px dashed',
+                      borderColor: 'grey.300',
+                      borderRadius: 3,
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                        bgcolor: alpha('#2E7D32', 0.05)
+                      }
+                    }}
+                  >
+                    <Box sx={{ textAlign: 'center' }}>
+                      <ImageIcon sx={{ fontSize: 60, color: 'grey.400', mb: 1 }} />
+                      <Typography variant="body2" color="text.secondary">
+                        Nenhuma imagem selecionada
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+                <Button
+                  variant="contained"
+                  component="label"
+                  startIcon={<CloudUploadIcon />}
+                  sx={{
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 600
+                  }}
+                >
+                  Escolher Imagem
+                  <input
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={handleImageChange}
+                  />
+                </Button>
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
+                  Formatos: JPG, PNG, GIF, WEBP (máx. 5MB)
+                </Typography>
+              </Box>
             </Grid>
 
             <Grid item xs={12} md={6}>

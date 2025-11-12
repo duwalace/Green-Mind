@@ -11,7 +11,10 @@ const PORT = process.env.PORT || 3001;
 const JWT_SECRET = 'seu_jwt_secret';
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Servir arquivos estáticos
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Middleware de autenticação
 const authenticateToken = (req, res, next) => {
@@ -39,17 +42,42 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
-// Configuração do multer para salvar na pasta 'uploads'
-const storage = multer.diskStorage({
+// Configuração do multer para avatares
+const avatarStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Crie essa pasta na raiz do backend se não existir
+    cb(null, 'uploads/');
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     cb(null, `avatar_${req.user.id}${ext}`);
   }
 });
-const upload = multer({ storage });
+const uploadAvatar = multer({ storage: avatarStorage });
+
+// Configuração do multer para vídeos de aulas
+const lessonVideoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/videos/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `lesson-${uniqueSuffix}${ext}`);
+  }
+});
+const uploadLessonVideo = multer({ 
+  storage: lessonVideoStorage,
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /mp4|avi|mov|wmv|flv|webm|mkv/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype) || file.mimetype.startsWith('video/');
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Apenas vídeos são permitidos (mp4, avi, mov, wmv, flv, webm, mkv)'));
+  }
+});
 
 // Rota de registro
 app.post('/api/auth/register', async (req, res) => {
@@ -941,7 +969,34 @@ app.get('/api/lessons/:lessonId/contents', async (req, res) => {
       [lessonId]
     );
 
-    res.json({ contents });
+    // Converter exercise_options de JSON string para array
+    const parsedContents = contents.map(content => {
+      if (content.exercise_options) {
+        try {
+          // Se já é um array, manter como está
+          if (Array.isArray(content.exercise_options)) {
+            console.log('exercise_options já é array:', content.exercise_options);
+          } else if (typeof content.exercise_options === 'string') {
+            // Se é string, fazer parse
+            console.log('Fazendo parse de exercise_options:', content.exercise_options);
+            content.exercise_options = JSON.parse(content.exercise_options);
+          }
+        } catch (e) {
+          console.error('Erro ao fazer parse de exercise_options:', e);
+          content.exercise_options = [];
+        }
+      }
+      console.log('Content retornado:', {
+        id: content.id,
+        title: content.title,
+        type: content.content_type,
+        exercise_type: content.exercise_type,
+        options: content.exercise_options
+      });
+      return content;
+    });
+
+    res.json({ contents: parsedContents });
   } catch (error) {
     console.error('Erro ao buscar conteúdos:', error);
     res.status(500).json({ message: 'Erro ao buscar conteúdos' });
@@ -1092,7 +1147,7 @@ app.get('/api/courses/:courseId/lessons/count', async (req, res) => {
 });
 
 // Rota para upload de avatar
-app.put('/api/users/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+app.put('/api/users/avatar', authenticateToken, uploadAvatar.single('avatar'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'Nenhum arquivo enviado' });
@@ -1206,8 +1261,70 @@ app.put('/api/users/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Servir arquivos estáticos da pasta uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// ========== ROTAS DE UPLOAD DE ARQUIVOS ==========
+
+// Upload de imagem de curso (apenas admin)
+app.post('/api/admin/upload/course-image', authenticateToken, isAdmin, (req, res) => {
+  uploadCourse.single('image')(req, res, (err) => {
+    if (err) {
+      console.error('Erro no upload de imagem:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ message: 'Imagem muito grande. Tamanho máximo: 5MB' });
+      }
+      return res.status(400).json({ message: err.message || 'Erro ao fazer upload da imagem' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Nenhuma imagem enviada' });
+    }
+
+    const imageUrl = `http://localhost:3001/uploads/courses/${req.file.filename}`;
+    
+    console.log('Imagem enviada com sucesso:', {
+      fileName: req.file.filename,
+      size: req.file.size,
+      url: imageUrl
+    });
+
+    res.json({ 
+      message: 'Imagem enviada com sucesso',
+      imageUrl: imageUrl,
+      fileName: req.file.filename
+    });
+  });
+});
+
+// Upload de vídeo de aula (apenas admin)
+app.post('/api/admin/upload/lesson-video', authenticateToken, isAdmin, (req, res) => {
+  uploadLessonVideo.single('video')(req, res, (err) => {
+    if (err) {
+      console.error('Erro no upload de vídeo:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ message: 'Arquivo muito grande. Tamanho máximo: 500MB' });
+      }
+      return res.status(400).json({ message: err.message || 'Erro ao fazer upload do vídeo' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Nenhum vídeo enviado' });
+    }
+
+    const videoUrl = `http://localhost:3001/uploads/videos/${req.file.filename}`;
+    
+    console.log('Vídeo enviado com sucesso:', {
+      fileName: req.file.filename,
+      size: req.file.size,
+      url: videoUrl
+    });
+
+    res.json({ 
+      message: 'Vídeo enviado com sucesso',
+      videoUrl: videoUrl,
+      fileName: req.file.filename,
+      fileSize: req.file.size
+    });
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);

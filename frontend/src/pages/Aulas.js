@@ -20,7 +20,12 @@ import {
   useMediaQuery,
   Divider,
   Paper,
-  LinearProgress
+  LinearProgress,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  TextField,
+  Alert
 } from '@mui/material';
 import {
   PlayCircleOutline as PlayIcon,
@@ -49,6 +54,11 @@ const Aulas = () => {
   const [loading, setLoading] = useState(true);
   const [loadingContents, setLoadingContents] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Estados para exercícios
+  const [exerciseAnswers, setExerciseAnswers] = useState({});
+  const [exerciseSubmitted, setExerciseSubmitted] = useState({});
+  const [exerciseFeedback, setExerciseFeedback] = useState({});
 
   // Calcular aula atual e progresso
   const currentLesson = lessons[currentLessonIndex];
@@ -81,6 +91,23 @@ const Aulas = () => {
         try {
           setLoadingContents(true);
           const response = await axios.get(`http://localhost:3001/api/lessons/${currentLesson.id}/contents`);
+          console.log('Conteúdos recebidos:', response.data.contents);
+          
+          // Log detalhado de cada exercício
+          response.data.contents.forEach(content => {
+            if (content.content_type === 'exercise') {
+              console.log('Exercício encontrado:', {
+                id: content.id,
+                title: content.title,
+                question: content.exercise_question,
+                type: content.exercise_type,
+                options: content.exercise_options,
+                optionsType: typeof content.exercise_options,
+                isArray: Array.isArray(content.exercise_options)
+              });
+            }
+          });
+          
           setCurrentLessonContents(response.data.contents || []);
         } catch (err) {
           console.error('Erro ao carregar conteúdos da aula:', err);
@@ -120,6 +147,37 @@ const Aulas = () => {
       }
       setCurrentLessonIndex(currentLessonIndex + 1);
     }
+  };
+
+  const handleExerciseAnswer = (contentId, answer) => {
+    setExerciseAnswers({
+      ...exerciseAnswers,
+      [contentId]: answer
+    });
+  };
+
+  const handleSubmitExercise = (content) => {
+    const userAnswer = exerciseAnswers[content.id];
+    const correctAnswer = content.exercise_correct_answer;
+    
+    let isCorrect = false;
+    
+    if (content.exercise_type === 'multiple_choice') {
+      isCorrect = userAnswer === correctAnswer;
+    } else {
+      // Para outros tipos, apenas aceita a resposta
+      isCorrect = true;
+    }
+    
+    setExerciseSubmitted({
+      ...exerciseSubmitted,
+      [content.id]: true
+    });
+    
+    setExerciseFeedback({
+      ...exerciseFeedback,
+      [content.id]: isCorrect
+    });
   };
 
   const SidebarContent = () => (
@@ -361,26 +419,27 @@ const Aulas = () => {
                           <Box
                             sx={{
                               position: 'relative',
-                              paddingTop: '56.25%',
-                              bgcolor: 'black',
+                              width: '100%',
                               borderRadius: 2,
                               overflow: 'hidden',
-                              mb: 2
+                              mb: 2,
+                              bgcolor: '#000'
                             }}
                           >
-                            <iframe
-                              src={content.video_url}
-                              title={content.title}
+                            <video
+                              controls
                               style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
                                 width: '100%',
-                                height: '100%',
-                                border: 'none',
+                                height: 'auto',
+                                display: 'block',
+                                maxHeight: '70vh'
                               }}
-                              allowFullScreen
-                            />
+                            >
+                              <source src={content.video_url} type="video/mp4" />
+                              <source src={content.video_url} type="video/webm" />
+                              <source src={content.video_url} type="video/ogg" />
+                              Seu navegador não suporta a reprodução de vídeos.
+                            </video>
                           </Box>
                         )}
 
@@ -411,35 +470,164 @@ const Aulas = () => {
                         {content.content_type === 'exercise' && (
                           <Box
                             sx={{
-                              bgcolor: 'success.50',
-                              p: 3,
+                              bgcolor: exerciseSubmitted[content.id] 
+                                ? (exerciseFeedback[content.id] ? 'success.50' : 'error.50')
+                                : 'primary.50',
+                              p: 4,
                               borderRadius: 2,
                               border: '2px solid',
-                              borderColor: 'success.main'
+                              borderColor: exerciseSubmitted[content.id]
+                                ? (exerciseFeedback[content.id] ? 'success.main' : 'error.main')
+                                : 'primary.main'
                             }}
                           >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                              <CheckCircleIcon color="success" />
-                              <Typography variant="h6" fontWeight={600}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+                              <CheckCircleIcon color={exerciseSubmitted[content.id] ? (exerciseFeedback[content.id] ? 'success' : 'error') : 'primary'} />
+                              <Typography variant="h6" fontWeight={700}>
                                 Exercício Prático
                               </Typography>
+                              <Chip
+                                label={content.exercise_type === 'multiple_choice' ? 'Múltipla Escolha' :
+                                      content.exercise_type === 'file_upload' ? 'Upload de Arquivo' :
+                                      'Resposta em Texto'}
+                                size="small"
+                                color={exerciseSubmitted[content.id] ? (exerciseFeedback[content.id] ? 'success' : 'error') : 'primary'}
+                                sx={{ ml: 'auto' }}
+                              />
                             </Box>
                             
                             {content.exercise_question && (
-                              <>
-                                <Typography variant="body1" sx={{ fontWeight: 600, mb: 2 }}>
-                                  {content.exercise_question}
+                              <Typography variant="body1" sx={{ fontWeight: 600, mb: 3, fontSize: '1.1rem' }}>
+                                {content.exercise_question}
+                              </Typography>
+                            )}
+
+                            {/* Debug: Mostrar problema se não há opções */}
+                            {content.exercise_type === 'multiple_choice' && (!content.exercise_options || !Array.isArray(content.exercise_options) || content.exercise_options.length === 0) && (
+                              <Alert severity="error" sx={{ mb: 3 }}>
+                                <Typography variant="body2">
+                                  <strong>Erro de configuração:</strong> Este exercício não possui opções de resposta configuradas.
                                 </Typography>
-                                
-                                <Chip
-                                  label={content.exercise_type === 'multiple_choice' ? 'Múltipla Escolha' :
-                                        content.exercise_type === 'file_upload' ? 'Upload de Arquivo' :
-                                        'Resposta em Texto'}
-                                  size="small"
-                                  color="success"
+                                <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
+                                  Debug: exercise_options = {JSON.stringify(content.exercise_options)} (tipo: {typeof content.exercise_options})
+                                </Typography>
+                              </Alert>
+                            )}
+
+                            {/* Múltipla Escolha */}
+                            {content.exercise_type === 'multiple_choice' && content.exercise_options && Array.isArray(content.exercise_options) && content.exercise_options.length > 0 && (
+                              <RadioGroup
+                                value={exerciseAnswers[content.id] || ''}
+                                onChange={(e) => handleExerciseAnswer(content.id, e.target.value)}
+                                disabled={exerciseSubmitted[content.id]}
+                              >
+                                {content.exercise_options.map((option, index) => (
+                                  <Paper
+                                    key={index}
+                                    elevation={exerciseAnswers[content.id] === index.toString() ? 3 : 1}
+                                    sx={{
+                                      mb: 2,
+                                      border: '2px solid',
+                                      borderColor: exerciseSubmitted[content.id] && index.toString() === content.exercise_correct_answer
+                                        ? 'success.main'
+                                        : exerciseSubmitted[content.id] && exerciseAnswers[content.id] === index.toString() && !exerciseFeedback[content.id]
+                                        ? 'error.main'
+                                        : exerciseAnswers[content.id] === index.toString()
+                                        ? 'primary.main'
+                                        : 'transparent',
+                                      bgcolor: 'white',
+                                      transition: 'all 0.2s'
+                                    }}
+                                  >
+                                    <FormControlLabel
+                                      value={index.toString()}
+                                      control={<Radio disabled={exerciseSubmitted[content.id]} />}
+                                      label={option}
+                                      sx={{
+                                        width: '100%',
+                                        m: 0,
+                                        p: 2,
+                                        '& .MuiFormControlLabel-label': {
+                                          fontSize: '1rem',
+                                          fontWeight: exerciseAnswers[content.id] === index.toString() ? 600 : 400
+                                        }
+                                      }}
+                                    />
+                                  </Paper>
+                                ))}
+                              </RadioGroup>
+                            )}
+
+                            {/* Resposta em Texto */}
+                            {content.exercise_type === 'text_answer' && (
+                              <TextField
+                                fullWidth
+                                multiline
+                                rows={4}
+                                placeholder="Digite sua resposta aqui..."
+                                value={exerciseAnswers[content.id] || ''}
+                                onChange={(e) => handleExerciseAnswer(content.id, e.target.value)}
+                                disabled={exerciseSubmitted[content.id]}
+                                sx={{
+                                  bgcolor: 'white',
+                                  '& .MuiOutlinedInput-root': { borderRadius: 2 }
+                                }}
+                              />
+                            )}
+
+                            {/* Upload de Arquivo */}
+                            {content.exercise_type === 'file_upload' && (
+                              <Box sx={{ textAlign: 'center', p: 3, bgcolor: 'white', borderRadius: 2 }}>
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                  {content.exercise_correct_answer || 'Faça o upload do arquivo solicitado'}
+                                </Typography>
+                                <Button
+                                  variant="contained"
+                                  component="label"
+                                  disabled={exerciseSubmitted[content.id]}
                                   sx={{ mt: 2 }}
-                                />
-                              </>
+                                >
+                                  Escolher Arquivo
+                                  <input
+                                    type="file"
+                                    hidden
+                                    onChange={(e) => handleExerciseAnswer(content.id, e.target.files[0]?.name || '')}
+                                  />
+                                </Button>
+                                {exerciseAnswers[content.id] && (
+                                  <Typography variant="body2" color="success.main" sx={{ mt: 1 }}>
+                                    ✓ {exerciseAnswers[content.id]}
+                                  </Typography>
+                                )}
+                              </Box>
+                            )}
+
+                            {/* Feedback e Botão de Enviar */}
+                            {exerciseSubmitted[content.id] ? (
+                              <Alert 
+                                severity={exerciseFeedback[content.id] ? 'success' : 'error'}
+                                sx={{ mt: 3, borderRadius: 2 }}
+                              >
+                                {exerciseFeedback[content.id] 
+                                  ? '✓ Resposta correta! Parabéns!' 
+                                  : '✗ Resposta incorreta. Tente novamente na próxima vez.'}
+                              </Alert>
+                            ) : (
+                              <Button
+                                variant="contained"
+                                size="large"
+                                fullWidth
+                                onClick={() => handleSubmitExercise(content)}
+                                disabled={!exerciseAnswers[content.id]}
+                                sx={{
+                                  mt: 3,
+                                  py: 1.5,
+                                  fontSize: '1rem',
+                                  fontWeight: 600
+                                }}
+                              >
+                                Enviar Resposta
+                              </Button>
                             )}
                           </Box>
                         )}
@@ -460,27 +648,28 @@ const Aulas = () => {
                 /* Conteúdo Legado (se não houver conteúdos múltiplos) */
                 <>
                   {currentLesson?.video_url && (
-                    <Card sx={{ mb: 4 }}>
+                    <Card sx={{ mb: 4, overflow: 'hidden' }}>
                       <Box
                         sx={{
                           position: 'relative',
-                          paddingTop: '56.25%',
-                          bgcolor: 'black',
+                          width: '100%',
+                          bgcolor: '#000'
                         }}
                       >
-                        <iframe
-                          src={currentLesson.video_url}
-                          title={currentLesson.title}
+                        <video
+                          controls
                           style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
                             width: '100%',
-                            height: '100%',
-                            border: 'none',
+                            height: 'auto',
+                            display: 'block',
+                            maxHeight: '70vh'
                           }}
-                          allowFullScreen
-                        />
+                        >
+                          <source src={currentLesson.video_url} type="video/mp4" />
+                          <source src={currentLesson.video_url} type="video/webm" />
+                          <source src={currentLesson.video_url} type="video/ogg" />
+                          Seu navegador não suporta a reprodução de vídeos.
+                        </video>
                       </Box>
                     </Card>
                   )}
