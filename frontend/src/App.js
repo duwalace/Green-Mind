@@ -18,13 +18,22 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const TrailSelection = lazy(() => import('./pages/TrailSelection'));
 const TrailLevel = lazy(() => import('./pages/TrailLevel'));
 const Profile = lazy(() => import('./pages/Profile'));
-const Achievements = lazy(() => import('./pages/Achievements'));
 const About = lazy(() => import('./pages/About'));
 const TrailCourses = lazy(() => import('./pages/TrailCourses'));
 const AllCourses = lazy(() => import('./pages/AllCourses'));
 const CourseDetails = lazy(() => import('./pages/CourseDetails'));
 const Aulas = lazy(() => import('./pages/Aulas'));
 const AdminLessons = lazy(() => import('./pages/AdminLessons'));
+const Quizzes = lazy(() => import('./pages/Quizzes'));
+const QuizPlay = lazy(() => import('./pages/QuizPlay'));
+const QuizResults = lazy(() => import('./pages/QuizResults'));
+const AdminQuizzes = lazy(() => import('./pages/AdminQuizzes'));
+
+// Páginas Multiplayer
+const QuizMultiplayerHost = lazy(() => import('./pages/QuizMultiplayerHost'));
+const QuizMultiplayerJoin = lazy(() => import('./pages/QuizMultiplayerJoin'));
+const QuizMultiplayerLobby = lazy(() => import('./pages/QuizMultiplayerLobby'));
+const QuizMultiplayerPlay = lazy(() => import('./pages/QuizMultiplayerPlay'));
 
 // Componente de loading
 const LoadingFallback = () => (
@@ -61,15 +70,36 @@ const App = () => {
             <Route path="/courses/:courseId/start" element={<Aulas />} />
             <Route path="/courses/:courseId/level" element={<TrailLevel />} />
             <Route path="/courses/:id" element={<CourseDetails />} />
+            
+            {/* Quiz Routes */}
+            <Route path="/quizzes" element={<Quizzes />} />
+            <Route path="/quiz-play/:quizId" element={<PrivateRoute><QuizPlay /></PrivateRoute>} />
+            <Route path="/quiz-results/:attemptId" element={<PrivateRoute><QuizResults /></PrivateRoute>} />
+            
+            {/* Multiplayer Routes */}
+            <Route path="/multiplayer/create" element={<PrivateRoute><QuizMultiplayerHost /></PrivateRoute>} />
+            <Route path="/multiplayer/join" element={<QuizMultiplayerJoin />} />
+            <Route path="/multiplayer/lobby/:roomCode" element={<QuizMultiplayerLobby />} />
+            <Route path="/multiplayer/play/:roomCode" element={<QuizMultiplayerPlay />} />
+            
             <Route path="/dashboard/*" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-            <Route path="/achievements" element={<PrivateRoute><Achievements /></PrivateRoute>} />
             <Route
               path="/admin/lessons"
               element={
                 <PrivateRoute>
                   <AdminRoute>
                     <AdminLessons />
+                  </AdminRoute>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin/quizzes"
+              element={
+                <PrivateRoute>
+                  <AdminRoute>
+                    <AdminQuizzes />
                   </AdminRoute>
                 </PrivateRoute>
               }

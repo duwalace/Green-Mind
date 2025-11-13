@@ -5,8 +5,20 @@ const bcrypt = require('bcrypt');
 const pool = require('./config/database');
 const multer = require('multer');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
+const roomManager = require('./roomManager');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = 'seu_jwt_secret';
 
@@ -1326,6 +1338,990 @@ app.post('/api/admin/upload/lesson-video', authenticateToken, isAdmin, (req, res
   });
 });
 
-app.listen(PORT, () => {
+// ========== ROTAS DE QUIZ ==========
+
+// Listar todos os quizzes (público - apenas published)
+app.get('/api/quizzes', async (req, res) => {
+  try {
+    const [quizzes] = await pool.execute(`
+      SELECT q.*, 
+             c.title as course_title,
+             t.title as trail_title,
+             u.name as created_by_name,
+             (SELECT COUNT(*) FROM quiz_questions WHERE quiz_id = q.id) as total_questions
+      FROM quizzes q
+      LEFT JOIN courses c ON q.course_id = c.id
+      LEFT JOIN trails t ON q.trail_id = t.id
+      LEFT JOIN users u ON q.created_by = u.id
+      WHERE q.status = 'published'
+      ORDER BY q.created_at DESC
+    `);
+    res.json({ quizzes });
+  } catch (error) {
+    console.error('Erro ao listar quizzes:', error);
+    res.status(500).json({ message: 'Erro ao listar quizzes' });
+  }
+});
+
+// Obter quiz específico com perguntas (público)
+app.get('/api/quizzes/:quizId', async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    
+    const [quizzes] = await pool.execute(`
+      SELECT q.*, 
+             c.title as course_title,
+             t.title as trail_title,
+             u.name as created_by_name,
+             (SELECT COUNT(*) FROM quiz_questions WHERE quiz_id = q.id) as total_questions
+      FROM quizzes q
+      LEFT JOIN courses c ON q.course_id = c.id
+      LEFT JOIN trails t ON q.trail_id = t.id
+      LEFT JOIN users u ON q.created_by = u.id
+      WHERE q.id = ? AND q.status = 'published'
+    `, [quizId]);
+
+    if (quizzes.length === 0) {
+      return res.status(404).json({ message: 'Quiz não encontrado' });
+    }
+
+    // Buscar perguntas (sem mostrar a resposta correta)
+    const [questions] = await pool.execute(`
+      SELECT id, quiz_id, question_text, question_type, image_url, 
+             time_limit_seconds, points, sequence_order, options
+      FROM quiz_questions
+      WHERE quiz_id = ?
+      ORDER BY sequence_order ASC
+    `, [quizId]);
+
+    // Parse JSON options
+    const parsedQuestions = questions.map(q => ({
+      ...q,
+      options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+    }));
+
+    res.json({ 
+      quiz: quizzes[0],
+      questions: parsedQuestions
+    });
+  } catch (error) {
+    console.error('Erro ao buscar quiz:', error);
+    res.status(500).json({ message: 'Erro ao buscar quiz' });
+  }
+});
+
+// Iniciar tentativa de quiz (autenticado)
+app.post('/api/quizzes/:quizId/start', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user.id;
+
+    // Verificar se o quiz existe
+    const [quizzes] = await pool.execute(
+      'SELECT id FROM quizzes WHERE id = ? AND status = "published"',
+      [quizId]
+    );
+
+    if (quizzes.length === 0) {
+      return res.status(404).json({ message: 'Quiz não encontrado' });
+    }
+
+    // Contar perguntas do quiz
+    const [questions] = await pool.execute(
+      'SELECT COUNT(*) as count FROM quiz_questions WHERE quiz_id = ?',
+      [quizId]
+    );
+
+    // Criar tentativa
+    const [result] = await pool.execute(`
+      INSERT INTO quiz_attempts (quiz_id, user_id, total_questions, started_at)
+      VALUES (?, ?, ?, NOW())
+    `, [quizId, userId, questions[0].count]);
+
+    res.status(201).json({
+      message: 'Tentativa iniciada',
+      attemptId: result.insertId
+    });
+  } catch (error) {
+    console.error('Erro ao iniciar quiz:', error);
+    res.status(500).json({ message: 'Erro ao iniciar quiz' });
+  }
+});
+
+// Submeter resposta de uma pergunta
+app.post('/api/quiz-attempts/:attemptId/answer', authenticateToken, async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { questionId, userAnswer, timeTaken } = req.body;
+
+    // Verificar se a tentativa pertence ao usuário
+    const [attempts] = await pool.execute(
+      'SELECT * FROM quiz_attempts WHERE id = ? AND user_id = ?',
+      [attemptId, req.user.id]
+    );
+
+    if (attempts.length === 0) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    // Buscar pergunta e resposta correta
+    const [questions] = await pool.execute(
+      'SELECT * FROM quiz_questions WHERE id = ?',
+      [questionId]
+    );
+
+    if (questions.length === 0) {
+      return res.status(404).json({ message: 'Pergunta não encontrada' });
+    }
+
+    const question = questions[0];
+    const isCorrect = userAnswer.toString() === question.correct_answer.toString();
+    const pointsEarned = isCorrect ? question.points : 0;
+
+    // Salvar resposta
+    await pool.execute(`
+      INSERT INTO quiz_user_answers (attempt_id, question_id, user_answer, is_correct, time_taken_seconds, points_earned)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [attemptId, questionId, userAnswer, isCorrect, timeTaken, pointsEarned]);
+
+    res.json({
+      isCorrect,
+      pointsEarned,
+      correctAnswer: question.correct_answer,
+      explanation: question.explanation
+    });
+  } catch (error) {
+    console.error('Erro ao submeter resposta:', error);
+    res.status(500).json({ message: 'Erro ao submeter resposta' });
+  }
+});
+
+// Finalizar quiz e calcular pontuação
+app.post('/api/quiz-attempts/:attemptId/finish', authenticateToken, async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { totalTimeTaken } = req.body;
+
+    // Verificar se a tentativa pertence ao usuário
+    const [attempts] = await pool.execute(
+      'SELECT qa.*, q.passing_score FROM quiz_attempts qa JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = ? AND qa.user_id = ?',
+      [attemptId, req.user.id]
+    );
+
+    if (attempts.length === 0) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    const attempt = attempts[0];
+
+    // Calcular estatísticas
+    const [stats] = await pool.execute(`
+      SELECT 
+        COUNT(*) as total_answered,
+        SUM(CASE WHEN is_correct = TRUE THEN 1 ELSE 0 END) as correct_answers,
+        SUM(points_earned) as total_points
+      FROM quiz_user_answers
+      WHERE attempt_id = ?
+    `, [attemptId]);
+
+    const correctAnswers = stats[0].correct_answers || 0;
+    const totalPoints = stats[0].total_points || 0;
+    const totalQuestions = attempt.total_questions;
+    const score = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+    const passed = score >= attempt.passing_score;
+
+    // Atualizar tentativa
+    await pool.execute(`
+      UPDATE quiz_attempts 
+      SET score = ?, 
+          correct_answers = ?,
+          time_taken_seconds = ?,
+          passed = ?,
+          completed_at = NOW()
+      WHERE id = ?
+    `, [score, correctAnswers, totalTimeTaken, passed, attemptId]);
+
+    // Atualizar ou inserir no leaderboard
+    await pool.execute(`
+      INSERT INTO quiz_leaderboard (quiz_id, user_id, best_score, best_time_seconds, total_attempts, last_attempt_at)
+      VALUES (?, ?, ?, ?, 1, NOW())
+      ON DUPLICATE KEY UPDATE
+        best_score = IF(? > best_score, ?, best_score),
+        best_time_seconds = IF(? > best_score OR (? = best_score AND ? < best_time_seconds), ?, best_time_seconds),
+        total_attempts = total_attempts + 1,
+        last_attempt_at = NOW()
+    `, [
+      attempt.quiz_id, 
+      req.user.id, 
+      score, 
+      totalTimeTaken,
+      score, score,
+      score, score, totalTimeTaken, totalTimeTaken
+    ]);
+
+    res.json({
+      score,
+      correctAnswers,
+      totalQuestions,
+      totalPoints,
+      passed,
+      timeTaken: totalTimeTaken
+    });
+  } catch (error) {
+    console.error('Erro ao finalizar quiz:', error);
+    res.status(500).json({ message: 'Erro ao finalizar quiz' });
+  }
+});
+
+// Obter leaderboard de um quiz
+app.get('/api/quizzes/:quizId/leaderboard', async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const [leaderboard] = await pool.execute(`
+      SELECT 
+        l.best_score,
+        l.best_time_seconds,
+        l.total_attempts,
+        l.last_attempt_at,
+        u.name as user_name,
+        u.avatar as user_avatar
+      FROM quiz_leaderboard l
+      JOIN users u ON l.user_id = u.id
+      WHERE l.quiz_id = ?
+      ORDER BY l.best_score DESC, l.best_time_seconds ASC
+      LIMIT ?
+    `, [quizId, limit]);
+
+    res.json({ leaderboard });
+  } catch (error) {
+    console.error('Erro ao buscar leaderboard:', error);
+    res.status(500).json({ message: 'Erro ao buscar leaderboard' });
+  }
+});
+
+// Histórico de tentativas do usuário
+app.get('/api/users/quiz-history', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [history] = await pool.execute(`
+      SELECT 
+        qa.*,
+        q.title as quiz_title,
+        q.image_url as quiz_image
+      FROM quiz_attempts qa
+      JOIN quizzes q ON qa.quiz_id = q.id
+      WHERE qa.user_id = ? AND qa.completed_at IS NOT NULL
+      ORDER BY qa.completed_at DESC
+    `, [userId]);
+
+    res.json({ history });
+  } catch (error) {
+    console.error('Erro ao buscar histórico:', error);
+    res.status(500).json({ message: 'Erro ao buscar histórico' });
+  }
+});
+
+// ========== ROTAS ADMIN DE QUIZ ==========
+
+// Listar TODOS os quizzes (admin)
+app.get('/api/admin/quizzes', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const [quizzes] = await pool.execute(`
+      SELECT q.*, 
+             c.title as course_title,
+             t.title as trail_title,
+             u.name as created_by_name,
+             (SELECT COUNT(*) FROM quiz_questions WHERE quiz_id = q.id) as total_questions,
+             (SELECT COUNT(*) FROM quiz_attempts WHERE quiz_id = q.id) as total_attempts
+      FROM quizzes q
+      LEFT JOIN courses c ON q.course_id = c.id
+      LEFT JOIN trails t ON q.trail_id = t.id
+      LEFT JOIN users u ON q.created_by = u.id
+      ORDER BY q.created_at DESC
+    `);
+    res.json({ quizzes });
+  } catch (error) {
+    console.error('Erro ao listar quizzes (admin):', error);
+    res.status(500).json({ message: 'Erro ao listar quizzes' });
+  }
+});
+
+// Criar novo quiz (admin)
+app.post('/api/admin/quizzes', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      course_id,
+      trail_id,
+      image_url,
+      difficulty_level,
+      time_limit_seconds,
+      points_per_question,
+      passing_score,
+      status
+    } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ message: 'Título é obrigatório' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO quizzes (
+        title, description, course_id, trail_id, image_url,
+        difficulty_level, time_limit_seconds, points_per_question,
+        passing_score, status, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      title,
+      description || null,
+      course_id || null,
+      trail_id || null,
+      image_url || null,
+      difficulty_level || 'beginner',
+      time_limit_seconds || 300,
+      points_per_question || 100,
+      passing_score || 70.00,
+      status || 'draft',
+      req.user.id
+    ]);
+
+    res.status(201).json({
+      message: 'Quiz criado com sucesso',
+      quizId: result.insertId
+    });
+  } catch (error) {
+    console.error('Erro ao criar quiz:', error);
+    res.status(500).json({ message: 'Erro ao criar quiz' });
+  }
+});
+
+// Atualizar quiz (admin)
+app.put('/api/admin/quizzes/:quizId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const {
+      title,
+      description,
+      course_id,
+      trail_id,
+      image_url,
+      difficulty_level,
+      time_limit_seconds,
+      points_per_question,
+      passing_score,
+      status
+    } = req.body;
+
+    await pool.execute(`
+      UPDATE quizzes SET
+        title = ?,
+        description = ?,
+        course_id = ?,
+        trail_id = ?,
+        image_url = ?,
+        difficulty_level = ?,
+        time_limit_seconds = ?,
+        points_per_question = ?,
+        passing_score = ?,
+        status = ?
+      WHERE id = ?
+    `, [
+      title,
+      description,
+      course_id,
+      trail_id,
+      image_url,
+      difficulty_level,
+      time_limit_seconds,
+      points_per_question,
+      passing_score,
+      status,
+      quizId
+    ]);
+
+    res.json({ message: 'Quiz atualizado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar quiz:', error);
+    res.status(500).json({ message: 'Erro ao atualizar quiz' });
+  }
+});
+
+// Deletar quiz (admin)
+app.delete('/api/admin/quizzes/:quizId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    await pool.execute('DELETE FROM quizzes WHERE id = ?', [quizId]);
+    res.json({ message: 'Quiz deletado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar quiz:', error);
+    res.status(500).json({ message: 'Erro ao deletar quiz' });
+  }
+});
+
+// Criar pergunta para quiz (admin)
+app.post('/api/admin/quizzes/:quizId/questions', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const {
+      question_text,
+      question_type,
+      image_url,
+      time_limit_seconds,
+      points,
+      sequence_order,
+      options,
+      correct_answer,
+      explanation
+    } = req.body;
+
+    if (!question_text || !correct_answer) {
+      return res.status(400).json({ message: 'Pergunta e resposta correta são obrigatórios' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO quiz_questions (
+        quiz_id, question_text, question_type, image_url,
+        time_limit_seconds, points, sequence_order,
+        options, correct_answer, explanation
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      quizId,
+      question_text,
+      question_type || 'multiple_choice',
+      image_url || null,
+      time_limit_seconds || 30,
+      points || 100,
+      sequence_order || 0,
+      options ? JSON.stringify(options) : null,
+      correct_answer,
+      explanation || null
+    ]);
+
+    res.status(201).json({
+      message: 'Pergunta criada com sucesso',
+      questionId: result.insertId
+    });
+  } catch (error) {
+    console.error('Erro ao criar pergunta:', error);
+    res.status(500).json({ message: 'Erro ao criar pergunta' });
+  }
+});
+
+// Atualizar pergunta (admin)
+app.put('/api/admin/quiz-questions/:questionId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { questionId } = req.params;
+    const {
+      question_text,
+      question_type,
+      image_url,
+      time_limit_seconds,
+      points,
+      sequence_order,
+      options,
+      correct_answer,
+      explanation
+    } = req.body;
+
+    await pool.execute(`
+      UPDATE quiz_questions SET
+        question_text = ?,
+        question_type = ?,
+        image_url = ?,
+        time_limit_seconds = ?,
+        points = ?,
+        sequence_order = ?,
+        options = ?,
+        correct_answer = ?,
+        explanation = ?
+      WHERE id = ?
+    `, [
+      question_text,
+      question_type,
+      image_url,
+      time_limit_seconds,
+      points,
+      sequence_order,
+      options ? JSON.stringify(options) : null,
+      correct_answer,
+      explanation,
+      questionId
+    ]);
+
+    res.json({ message: 'Pergunta atualizada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar pergunta:', error);
+    res.status(500).json({ message: 'Erro ao atualizar pergunta' });
+  }
+});
+
+// Deletar pergunta (admin)
+app.delete('/api/admin/quiz-questions/:questionId', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { questionId } = req.params;
+    await pool.execute('DELETE FROM quiz_questions WHERE id = ?', [questionId]);
+    res.json({ message: 'Pergunta deletada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar pergunta:', error);
+    res.status(500).json({ message: 'Erro ao deletar pergunta' });
+  }
+});
+
+// Obter perguntas de um quiz com respostas (admin)
+app.get('/api/admin/quizzes/:quizId/questions', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+
+    const [questions] = await pool.execute(`
+      SELECT * FROM quiz_questions
+      WHERE quiz_id = ?
+      ORDER BY sequence_order ASC
+    `, [quizId]);
+
+    // Parse JSON options
+    const parsedQuestions = questions.map(q => ({
+      ...q,
+      options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+    }));
+
+    res.json({ questions: parsedQuestions });
+  } catch (error) {
+    console.error('Erro ao buscar perguntas:', error);
+    res.status(500).json({ message: 'Erro ao buscar perguntas' });
+  }
+});
+
+// Estatísticas de um quiz (admin)
+app.get('/api/admin/quizzes/:quizId/statistics', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+
+    const [stats] = await pool.execute(`
+      SELECT 
+        COUNT(*) as total_attempts,
+        AVG(score) as average_score,
+        MAX(score) as highest_score,
+        MIN(score) as lowest_score,
+        SUM(CASE WHEN passed = TRUE THEN 1 ELSE 0 END) as total_passed,
+        AVG(time_taken_seconds) as average_time
+      FROM quiz_attempts
+      WHERE quiz_id = ? AND completed_at IS NOT NULL
+    `, [quizId]);
+
+    res.json({ statistics: stats[0] });
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    res.status(500).json({ message: 'Erro ao buscar estatísticas' });
+  }
+});
+
+// ========== ROTAS DE SALAS MULTIPLAYER ==========
+
+// Criar sala multiplayer (apenas usuários autenticados)
+app.post('/api/multiplayer/create-room', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.body;
+
+    if (!quizId) {
+      return res.status(400).json({ message: 'Quiz ID é obrigatório' });
+    }
+
+    // Buscar dados do quiz
+    const [quizzes] = await pool.execute(`
+      SELECT q.*, u.name as created_by_name
+      FROM quizzes q
+      LEFT JOIN users u ON q.created_by = u.id
+      WHERE q.id = ? AND q.status = 'published'
+    `, [quizId]);
+
+    if (quizzes.length === 0) {
+      return res.status(404).json({ message: 'Quiz não encontrado' });
+    }
+
+    // Buscar perguntas do quiz
+    const [questions] = await pool.execute(`
+      SELECT id, quiz_id, question_text, question_type, image_url, 
+             time_limit_seconds, points, sequence_order, options, correct_answer
+      FROM quiz_questions
+      WHERE quiz_id = ?
+      ORDER BY sequence_order ASC
+    `, [quizId]);
+
+    // Parse JSON options
+    const parsedQuestions = questions.map(q => ({
+      ...q,
+      options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+    }));
+
+    const quizData = {
+      ...quizzes[0],
+      questions: parsedQuestions
+    };
+
+    // Buscar dados do usuário
+    const [users] = await pool.execute(
+      'SELECT id, name, avatar FROM users WHERE id = ?',
+      [req.user.id]
+    );
+
+    const hostData = {
+      userId: req.user.id,
+      name: users[0].name,
+      avatar: users[0].avatar
+    };
+
+    res.json({
+      message: 'Conecte-se via Socket.io para criar a sala',
+      quizId,
+      hostData
+    });
+  } catch (error) {
+    console.error('Erro ao preparar sala:', error);
+    res.status(500).json({ message: 'Erro ao preparar sala' });
+  }
+});
+
+// Verificar se sala existe
+app.get('/api/multiplayer/room/:roomCode', (req, res) => {
+  try {
+    const { roomCode } = req.params;
+    const exists = roomManager.roomExists(roomCode);
+
+    if (!exists) {
+      return res.status(404).json({ message: 'Sala não encontrada' });
+    }
+
+    const room = roomManager.getRoom(roomCode);
+    const publicData = roomManager.getRoomPublicData(room);
+
+    res.json({ room: publicData });
+  } catch (error) {
+    console.error('Erro ao verificar sala:', error);
+    res.status(500).json({ message: 'Erro ao verificar sala' });
+  }
+});
+
+// Estatísticas de salas
+app.get('/api/multiplayer/stats', (req, res) => {
+  try {
+    const stats = roomManager.getStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    res.status(500).json({ message: 'Erro ao buscar estatísticas' });
+  }
+});
+
+// ========== SOCKET.IO - EVENTOS MULTIPLAYER ==========
+
+// Middleware para verificar IP da mesma LAN
+const checkSameLAN = (socket, next) => {
+  const clientIP = socket.handshake.address;
+  console.log('Cliente conectando de:', clientIP);
+  
+  // Aceitar localhost e IPs privados
+  const privateIPRegex = /^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)/;
+  
+  if (privateIPRegex.test(clientIP) || clientIP === '::1' || clientIP === '::ffff:127.0.0.1') {
+    return next();
+  }
+  
+  // Para produção, você pode adicionar lógica mais restritiva aqui
+  return next();
+};
+
+io.use(checkSameLAN);
+
+io.on('connection', (socket) => {
+  console.log(`Socket conectado: ${socket.id}`);
+
+  // HOST: Criar sala
+  socket.on('create_room', async (data) => {
+    try {
+      const { quizId, hostData } = data;
+
+      // Buscar dados do quiz com perguntas
+      const [quizzes] = await pool.execute(`
+        SELECT q.*, u.name as created_by_name
+        FROM quizzes q
+        LEFT JOIN users u ON q.created_by = u.id
+        WHERE q.id = ? AND q.status = 'published'
+      `, [quizId]);
+
+      if (quizzes.length === 0) {
+        socket.emit('error', { message: 'Quiz não encontrado' });
+        return;
+      }
+
+      // Buscar perguntas
+      const [questions] = await pool.execute(`
+        SELECT id, quiz_id, question_text, question_type, image_url, 
+               time_limit_seconds, points, sequence_order, options, correct_answer
+        FROM quiz_questions
+        WHERE quiz_id = ?
+        ORDER BY sequence_order ASC
+      `, [quizId]);
+
+      const parsedQuestions = questions.map(q => ({
+        ...q,
+        options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+      }));
+
+      const quizData = {
+        ...quizzes[0],
+        questions: parsedQuestions
+      };
+
+      const room = roomManager.createRoom(socket.id, hostData, quizId, quizData);
+      
+      // Entrar na sala do Socket.io
+      socket.join(room.code);
+      
+      socket.emit('room_created', {
+        roomCode: room.code,
+        room: roomManager.getRoomPublicData(room)
+      });
+
+      console.log(`Sala ${room.code} criada por ${hostData.name}`);
+    } catch (error) {
+      console.error('Erro ao criar sala:', error);
+      socket.emit('error', { message: 'Erro ao criar sala' });
+    }
+  });
+
+  // JOGADOR: Entrar na sala
+  socket.on('join_room', (data) => {
+    try {
+      const { roomCode, playerData } = data;
+
+      const result = roomManager.joinRoom(roomCode, socket.id, playerData);
+
+      if (!result.success) {
+        socket.emit('join_error', { message: result.error });
+        return;
+      }
+
+      // Entrar na sala do Socket.io
+      socket.join(roomCode);
+
+      // Confirmar para o jogador
+      socket.emit('room_joined', {
+        playerId: result.playerId,
+        room: result.room
+      });
+
+      // Notificar todos na sala
+      io.to(roomCode).emit('player_joined', {
+        player: {
+          id: result.playerId,
+          name: playerData.name,
+          avatar: playerData.avatar
+        },
+        room: result.room
+      });
+
+      console.log(`${playerData.name} entrou na sala ${roomCode}`);
+    } catch (error) {
+      console.error('Erro ao entrar na sala:', error);
+      socket.emit('error', { message: 'Erro ao entrar na sala' });
+    }
+  });
+
+  // HOST: Iniciar jogo
+  socket.on('start_game', (data) => {
+    try {
+      const { roomCode } = data;
+      const playerData = roomManager.getPlayerData(socket.id);
+
+      if (!playerData || !playerData.isHost) {
+        socket.emit('error', { message: 'Apenas o host pode iniciar o jogo' });
+        return;
+      }
+
+      const result = roomManager.startGame(roomCode);
+
+      if (!result.success) {
+        socket.emit('error', { message: result.error });
+        return;
+      }
+
+      const room = roomManager.getRoom(roomCode);
+      
+      // Enviar primeira questão (sem resposta correta)
+      const question = {
+        ...room.quizData.questions[0],
+        correct_answer: undefined // Não enviar resposta correta
+      };
+
+      io.to(roomCode).emit('game_started', {
+        questionIndex: 0,
+        question: question,
+        totalQuestions: room.quizData.questions.length
+      });
+
+      console.log(`Jogo iniciado na sala ${roomCode}`);
+    } catch (error) {
+      console.error('Erro ao iniciar jogo:', error);
+      socket.emit('error', { message: 'Erro ao iniciar jogo' });
+    }
+  });
+
+  // JOGADOR: Submeter resposta
+  socket.on('submit_answer', (data) => {
+    try {
+      const { roomCode, questionIndex, answer } = data;
+      const playerData = roomManager.getPlayerData(socket.id);
+
+      if (!playerData) {
+        socket.emit('error', { message: 'Jogador não encontrado' });
+        return;
+      }
+
+      const result = roomManager.submitAnswer(
+        roomCode,
+        playerData.playerId,
+        questionIndex,
+        answer
+      );
+
+      if (!result.success) {
+        socket.emit('error', { message: result.error });
+        return;
+      }
+
+      // Enviar resultado para o jogador
+      socket.emit('answer_result', {
+        isCorrect: result.isCorrect,
+        points: result.points,
+        totalScore: result.totalScore,
+        correctAnswer: result.correctAnswer
+      });
+
+      // Notificar host sobre a resposta (sem revelar se está correta)
+      const room = roomManager.getRoom(roomCode);
+      const player = Array.from(room.players.values()).find(p => p.id === playerData.playerId);
+      
+      io.to(room.host.socketId).emit('player_answered', {
+        playerId: playerData.playerId,
+        playerName: player?.name
+      });
+
+      console.log(`Resposta submetida na sala ${roomCode}`);
+    } catch (error) {
+      console.error('Erro ao submeter resposta:', error);
+      socket.emit('error', { message: 'Erro ao submeter resposta' });
+    }
+  });
+
+  // HOST: Próxima questão
+  socket.on('next_question', (data) => {
+    try {
+      const { roomCode } = data;
+      const playerData = roomManager.getPlayerData(socket.id);
+
+      if (!playerData || !playerData.isHost) {
+        socket.emit('error', { message: 'Apenas o host pode avançar questões' });
+        return;
+      }
+
+      const result = roomManager.nextQuestion(roomCode);
+
+      if (!result.success) {
+        socket.emit('error', { message: result.error });
+        return;
+      }
+
+      const room = roomManager.getRoom(roomCode);
+
+      if (result.finished) {
+        // Jogo finalizado, enviar leaderboard
+        const leaderboard = roomManager.getLeaderboard(roomCode);
+        
+        io.to(roomCode).emit('game_finished', {
+          leaderboard: leaderboard
+        });
+
+        console.log(`Jogo finalizado na sala ${roomCode}`);
+      } else {
+        // Enviar próxima questão
+        const question = {
+          ...room.quizData.questions[result.questionIndex],
+          correct_answer: undefined
+        };
+
+        io.to(roomCode).emit('next_question_started', {
+          questionIndex: result.questionIndex,
+          question: question,
+          totalQuestions: room.quizData.questions.length
+        });
+
+        console.log(`Questão ${result.questionIndex} na sala ${roomCode}`);
+      }
+    } catch (error) {
+      console.error('Erro ao avançar questão:', error);
+      socket.emit('error', { message: 'Erro ao avançar questão' });
+    }
+  });
+
+  // HOST: Mostrar leaderboard
+  socket.on('show_leaderboard', (data) => {
+    try {
+      const { roomCode } = data;
+      const leaderboard = roomManager.getLeaderboard(roomCode);
+      
+      io.to(roomCode).emit('leaderboard_update', {
+        leaderboard: leaderboard
+      });
+
+      console.log(`Leaderboard atualizado na sala ${roomCode}`);
+    } catch (error) {
+      console.error('Erro ao mostrar leaderboard:', error);
+      socket.emit('error', { message: 'Erro ao mostrar leaderboard' });
+    }
+  });
+
+  // Sair da sala
+  socket.on('leave_room', () => {
+    handleDisconnect(socket);
+  });
+
+  // Desconexão
+  socket.on('disconnect', () => {
+    handleDisconnect(socket);
+    console.log(`Socket desconectado: ${socket.id}`);
+  });
+
+  function handleDisconnect(socket) {
+    const result = roomManager.leaveRoom(socket.id);
+    
+    if (result) {
+      if (result.hostLeft) {
+        // Host saiu, notificar todos e fechar sala
+        io.to(result.roomCode).emit('room_closed', {
+          message: 'O host encerrou a sala'
+        });
+        
+        // Remover todos da sala
+        io.in(result.roomCode).socketsLeave(result.roomCode);
+      } else if (result.playerId) {
+        // Jogador saiu, notificar sala
+        const room = roomManager.getRoom(result.roomCode);
+        if (room) {
+          io.to(result.roomCode).emit('player_left', {
+            playerId: result.playerId,
+            room: roomManager.getRoomPublicData(room)
+          });
+        }
+      }
+    }
+  }
+});
+
+server.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`Socket.io habilitado para multiplayer`);
 });
