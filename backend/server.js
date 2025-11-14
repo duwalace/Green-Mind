@@ -8,21 +8,79 @@ const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const roomManager = require('./roomManager');
+const os = require('os');
+
+// Carregar variáveis de ambiente se existir .env
+try {
+  require('dotenv').config();
+} catch (err) {
+  console.log('dotenv não instalado ou .env não encontrado, usando valores padrão');
+}
 
 const app = express();
+
+// Função para obter IP local da LAN
+function getLocalIP() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // Pular endereços internos e não-IPv4
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+const localIP = getLocalIP();
+const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
+const JWT_SECRET = process.env.JWT_SECRET || 'seu_jwt_secret';
+
+// Configurar origens permitidas para CORS
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',') 
+  : [
+      'http://localhost:3000',
+      `http://${localIP}:3000`,
+      'http://192.168.0.0/16' // Permitir toda a rede local 192.168.x.x
+    ];
+
+// CORS configurado para aceitar conexões da LAN
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir requisições sem origin (como apps mobile ou Postman)
+    if (!origin) return callback(null, true);
+    
+    // Permitir localhost
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+    
+    // Permitir IPs da rede local (192.168.x.x ou 10.x.x.x)
+    if (origin.match(/http:\/\/(192\.168\.|10\.)/)) {
+      return callback(null, true);
+    }
+    
+    // Verificar lista de origens permitidas
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    callback(null, true); // Em desenvolvimento, permitir tudo
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET", "POST"],
-    credentials: true
-  }
+  cors: corsOptions
 });
 
-const PORT = process.env.PORT || 3001;
-const JWT_SECRET = 'seu_jwt_secret';
-
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Servir arquivos estáticos
@@ -1410,11 +1468,32 @@ app.get('/api/quizzes/:quizId', async (req, res) => {
   }
 });
 
-// Iniciar tentativa de quiz (autenticado)
-app.post('/api/quizzes/:quizId/start', authenticateToken, async (req, res) => {
+// Middleware opcional de autenticação (tenta autenticar, mas não falha se não houver token)
+const optionalAuthenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      req.user = null;
+    } else {
+      req.user = user;
+    }
+    next();
+  });
+};
+
+// Iniciar tentativa de quiz (público - login opcional)
+app.post('/api/quizzes/:quizId/start', optionalAuthenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params;
-    const userId = req.user.id;
+    const { guestName } = req.body; // Nome do visitante não logado
+    const userId = req.user ? req.user.id : null;
 
     // Verificar se o quiz existe
     const [quizzes] = await pool.execute(
@@ -1432,15 +1511,16 @@ app.post('/api/quizzes/:quizId/start', authenticateToken, async (req, res) => {
       [quizId]
     );
 
-    // Criar tentativa
+    // Criar tentativa (com ou sem usuário)
     const [result] = await pool.execute(`
-      INSERT INTO quiz_attempts (quiz_id, user_id, total_questions, started_at)
-      VALUES (?, ?, ?, NOW())
-    `, [quizId, userId, questions[0].count]);
+      INSERT INTO quiz_attempts (quiz_id, user_id, guest_name, total_questions, started_at)
+      VALUES (?, ?, ?, ?, NOW())
+    `, [quizId, userId, guestName || null, questions[0].count]);
 
     res.status(201).json({
       message: 'Tentativa iniciada',
-      attemptId: result.insertId
+      attemptId: result.insertId,
+      isGuest: !userId
     });
   } catch (error) {
     console.error('Erro ao iniciar quiz:', error);
@@ -1448,20 +1528,20 @@ app.post('/api/quizzes/:quizId/start', authenticateToken, async (req, res) => {
   }
 });
 
-// Submeter resposta de uma pergunta
-app.post('/api/quiz-attempts/:attemptId/answer', authenticateToken, async (req, res) => {
+// Submeter resposta de uma pergunta (público)
+app.post('/api/quiz-attempts/:attemptId/answer', async (req, res) => {
   try {
     const { attemptId } = req.params;
     const { questionId, userAnswer, timeTaken } = req.body;
 
-    // Verificar se a tentativa pertence ao usuário
+    // Verificar se a tentativa existe
     const [attempts] = await pool.execute(
-      'SELECT * FROM quiz_attempts WHERE id = ? AND user_id = ?',
-      [attemptId, req.user.id]
+      'SELECT * FROM quiz_attempts WHERE id = ?',
+      [attemptId]
     );
 
     if (attempts.length === 0) {
-      return res.status(403).json({ message: 'Acesso negado' });
+      return res.status(404).json({ message: 'Tentativa não encontrada' });
     }
 
     // Buscar pergunta e resposta correta
@@ -1496,20 +1576,20 @@ app.post('/api/quiz-attempts/:attemptId/answer', authenticateToken, async (req, 
   }
 });
 
-// Finalizar quiz e calcular pontuação
-app.post('/api/quiz-attempts/:attemptId/finish', authenticateToken, async (req, res) => {
+// Finalizar quiz e calcular pontuação (público)
+app.post('/api/quiz-attempts/:attemptId/finish', async (req, res) => {
   try {
     const { attemptId } = req.params;
     const { totalTimeTaken } = req.body;
 
-    // Verificar se a tentativa pertence ao usuário
+    // Verificar se a tentativa existe
     const [attempts] = await pool.execute(
-      'SELECT qa.*, q.passing_score FROM quiz_attempts qa JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = ? AND qa.user_id = ?',
-      [attemptId, req.user.id]
+      'SELECT qa.*, q.passing_score FROM quiz_attempts qa JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = ?',
+      [attemptId]
     );
 
     if (attempts.length === 0) {
-      return res.status(403).json({ message: 'Acesso negado' });
+      return res.status(404).json({ message: 'Tentativa não encontrada' });
     }
 
     const attempt = attempts[0];
@@ -1541,23 +1621,25 @@ app.post('/api/quiz-attempts/:attemptId/finish', authenticateToken, async (req, 
       WHERE id = ?
     `, [score, correctAnswers, totalTimeTaken, passed, attemptId]);
 
-    // Atualizar ou inserir no leaderboard
-    await pool.execute(`
-      INSERT INTO quiz_leaderboard (quiz_id, user_id, best_score, best_time_seconds, total_attempts, last_attempt_at)
-      VALUES (?, ?, ?, ?, 1, NOW())
-      ON DUPLICATE KEY UPDATE
-        best_score = IF(? > best_score, ?, best_score),
-        best_time_seconds = IF(? > best_score OR (? = best_score AND ? < best_time_seconds), ?, best_time_seconds),
-        total_attempts = total_attempts + 1,
-        last_attempt_at = NOW()
-    `, [
-      attempt.quiz_id, 
-      req.user.id, 
-      score, 
-      totalTimeTaken,
-      score, score,
-      score, score, totalTimeTaken, totalTimeTaken
-    ]);
+    // Atualizar leaderboard apenas se for usuário autenticado
+    if (attempt.user_id) {
+      await pool.execute(`
+        INSERT INTO quiz_leaderboard (quiz_id, user_id, best_score, best_time_seconds, total_attempts, last_attempt_at)
+        VALUES (?, ?, ?, ?, 1, NOW())
+        ON DUPLICATE KEY UPDATE
+          best_score = IF(? > best_score, ?, best_score),
+          best_time_seconds = IF(? > best_score OR (? = best_score AND ? < best_time_seconds), ?, best_time_seconds),
+          total_attempts = total_attempts + 1,
+          last_attempt_at = NOW()
+      `, [
+        attempt.quiz_id, 
+        attempt.user_id, 
+        score, 
+        totalTimeTaken,
+        score, score,
+        score, score, totalTimeTaken, totalTimeTaken
+      ]);
+    }
 
     res.json({
       score,
@@ -1565,7 +1647,8 @@ app.post('/api/quiz-attempts/:attemptId/finish', authenticateToken, async (req, 
       totalQuestions,
       totalPoints,
       passed,
-      timeTaken: totalTimeTaken
+      timeTaken: totalTimeTaken,
+      isGuest: !attempt.user_id
     });
   } catch (error) {
     console.error('Erro ao finalizar quiz:', error);
@@ -1621,6 +1704,370 @@ app.get('/api/users/quiz-history', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar histórico:', error);
     res.status(500).json({ message: 'Erro ao buscar histórico' });
+  }
+});
+
+// ========== ROTAS DE CRIAÇÃO DE QUIZ POR USUÁRIOS ==========
+
+// Listar quizzes do usuário logado
+app.get('/api/my-quizzes', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [quizzes] = await pool.execute(`
+      SELECT q.*, 
+             c.title as course_title,
+             t.title as trail_title,
+             u.name as created_by_name,
+             (SELECT COUNT(*) FROM quiz_questions WHERE quiz_id = q.id) as total_questions,
+             (SELECT COUNT(*) FROM quiz_attempts WHERE quiz_id = q.id) as total_attempts
+      FROM quizzes q
+      LEFT JOIN courses c ON q.course_id = c.id
+      LEFT JOIN trails t ON q.trail_id = t.id
+      LEFT JOIN users u ON q.created_by = u.id
+      WHERE q.created_by = ?
+      ORDER BY q.created_at DESC
+    `, [userId]);
+
+    res.json({ quizzes });
+  } catch (error) {
+    console.error('Erro ao listar meus quizzes:', error);
+    res.status(500).json({ message: 'Erro ao listar quizzes' });
+  }
+});
+
+// Criar novo quiz (qualquer usuário autenticado)
+app.post('/api/my-quizzes', authenticateToken, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      course_id,
+      trail_id,
+      image_url,
+      difficulty_level,
+      time_limit_seconds,
+      points_per_question,
+      passing_score,
+      status
+    } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ message: 'Título é obrigatório' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO quizzes (
+        title, description, course_id, trail_id, image_url,
+        difficulty_level, time_limit_seconds, points_per_question,
+        passing_score, status, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      title,
+      description || null,
+      course_id || null,
+      trail_id || null,
+      image_url || null,
+      difficulty_level || 'beginner',
+      time_limit_seconds || 300,
+      points_per_question || 100,
+      passing_score || 70.00,
+      status || 'draft',
+      req.user.id
+    ]);
+
+    res.status(201).json({
+      message: 'Quiz criado com sucesso',
+      quizId: result.insertId
+    });
+  } catch (error) {
+    console.error('Erro ao criar quiz:', error);
+    res.status(500).json({ message: 'Erro ao criar quiz' });
+  }
+});
+
+// Obter quiz específico do usuário (para edição)
+app.get('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.is_admin;
+
+    // Buscar quiz (apenas se for do usuário ou se usuário for admin)
+    const [quizzes] = await pool.execute(`
+      SELECT q.*, 
+             c.title as course_title,
+             t.title as trail_title,
+             u.name as created_by_name
+      FROM quizzes q
+      LEFT JOIN courses c ON q.course_id = c.id
+      LEFT JOIN trails t ON q.trail_id = t.id
+      LEFT JOIN users u ON q.created_by = u.id
+      WHERE q.id = ? AND (q.created_by = ? OR ? = TRUE)
+    `, [quizId, userId, isAdmin]);
+
+    if (quizzes.length === 0) {
+      return res.status(404).json({ message: 'Quiz não encontrado ou você não tem permissão' });
+    }
+
+    // Buscar perguntas (com resposta correta para edição)
+    const [questions] = await pool.execute(`
+      SELECT * FROM quiz_questions
+      WHERE quiz_id = ?
+      ORDER BY sequence_order ASC
+    `, [quizId]);
+
+    // Parse JSON options
+    const parsedQuestions = questions.map(q => ({
+      ...q,
+      options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+    }));
+
+    res.json({ 
+      quiz: quizzes[0],
+      questions: parsedQuestions
+    });
+  } catch (error) {
+    console.error('Erro ao buscar quiz:', error);
+    res.status(500).json({ message: 'Erro ao buscar quiz' });
+  }
+});
+
+// Atualizar quiz (apenas criador ou admin)
+app.put('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.is_admin;
+
+    // Verificar se o quiz pertence ao usuário ou se é admin
+    const [quizzes] = await pool.execute(
+      'SELECT * FROM quizzes WHERE id = ? AND (created_by = ? OR ? = TRUE)',
+      [quizId, userId, isAdmin]
+    );
+
+    if (quizzes.length === 0) {
+      return res.status(403).json({ message: 'Você não tem permissão para editar este quiz' });
+    }
+
+    const {
+      title,
+      description,
+      course_id,
+      trail_id,
+      image_url,
+      difficulty_level,
+      time_limit_seconds,
+      points_per_question,
+      passing_score,
+      status
+    } = req.body;
+
+    await pool.execute(`
+      UPDATE quizzes SET
+        title = ?,
+        description = ?,
+        course_id = ?,
+        trail_id = ?,
+        image_url = ?,
+        difficulty_level = ?,
+        time_limit_seconds = ?,
+        points_per_question = ?,
+        passing_score = ?,
+        status = ?
+      WHERE id = ?
+    `, [
+      title,
+      description,
+      course_id,
+      trail_id,
+      image_url,
+      difficulty_level,
+      time_limit_seconds,
+      points_per_question,
+      passing_score,
+      status,
+      quizId
+    ]);
+
+    res.json({ message: 'Quiz atualizado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar quiz:', error);
+    res.status(500).json({ message: 'Erro ao atualizar quiz' });
+  }
+});
+
+// Deletar quiz (apenas criador ou admin)
+app.delete('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.is_admin;
+
+    // Verificar se o quiz pertence ao usuário ou se é admin
+    const [quizzes] = await pool.execute(
+      'SELECT * FROM quizzes WHERE id = ? AND (created_by = ? OR ? = TRUE)',
+      [quizId, userId, isAdmin]
+    );
+
+    if (quizzes.length === 0) {
+      return res.status(403).json({ message: 'Você não tem permissão para deletar este quiz' });
+    }
+
+    await pool.execute('DELETE FROM quizzes WHERE id = ?', [quizId]);
+    res.json({ message: 'Quiz deletado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar quiz:', error);
+    res.status(500).json({ message: 'Erro ao deletar quiz' });
+  }
+});
+
+// Criar pergunta para quiz (apenas criador ou admin)
+app.post('/api/my-quizzes/:quizId/questions', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.is_admin;
+
+    // Verificar se o quiz pertence ao usuário ou se é admin
+    const [quizzes] = await pool.execute(
+      'SELECT * FROM quizzes WHERE id = ? AND (created_by = ? OR ? = TRUE)',
+      [quizId, userId, isAdmin]
+    );
+
+    if (quizzes.length === 0) {
+      return res.status(403).json({ message: 'Você não tem permissão para adicionar perguntas a este quiz' });
+    }
+
+    const {
+      question_text,
+      question_type,
+      image_url,
+      time_limit_seconds,
+      points,
+      sequence_order,
+      options,
+      correct_answer,
+      explanation
+    } = req.body;
+
+    if (!question_text || !correct_answer) {
+      return res.status(400).json({ message: 'Pergunta e resposta correta são obrigatórios' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO quiz_questions (
+        quiz_id, question_text, question_type, image_url,
+        time_limit_seconds, points, sequence_order,
+        options, correct_answer, explanation
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      quizId,
+      question_text,
+      question_type || 'multiple_choice',
+      image_url || null,
+      time_limit_seconds || 30,
+      points || 100,
+      sequence_order || 0,
+      options ? JSON.stringify(options) : null,
+      correct_answer,
+      explanation || null
+    ]);
+
+    res.status(201).json({
+      message: 'Pergunta criada com sucesso',
+      questionId: result.insertId
+    });
+  } catch (error) {
+    console.error('Erro ao criar pergunta:', error);
+    res.status(500).json({ message: 'Erro ao criar pergunta' });
+  }
+});
+
+// Atualizar pergunta (apenas criador ou admin)
+app.put('/api/my-quizzes/:quizId/questions/:questionId', authenticateToken, async (req, res) => {
+  try {
+    const { quizId, questionId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.is_admin;
+
+    // Verificar se o quiz pertence ao usuário ou se é admin
+    const [quizzes] = await pool.execute(
+      'SELECT * FROM quizzes WHERE id = ? AND (created_by = ? OR ? = TRUE)',
+      [quizId, userId, isAdmin]
+    );
+
+    if (quizzes.length === 0) {
+      return res.status(403).json({ message: 'Você não tem permissão para editar perguntas deste quiz' });
+    }
+
+    const {
+      question_text,
+      question_type,
+      image_url,
+      time_limit_seconds,
+      points,
+      sequence_order,
+      options,
+      correct_answer,
+      explanation
+    } = req.body;
+
+    await pool.execute(`
+      UPDATE quiz_questions SET
+        question_text = ?,
+        question_type = ?,
+        image_url = ?,
+        time_limit_seconds = ?,
+        points = ?,
+        sequence_order = ?,
+        options = ?,
+        correct_answer = ?,
+        explanation = ?
+      WHERE id = ? AND quiz_id = ?
+    `, [
+      question_text,
+      question_type,
+      image_url,
+      time_limit_seconds,
+      points,
+      sequence_order,
+      options ? JSON.stringify(options) : null,
+      correct_answer,
+      explanation,
+      questionId,
+      quizId
+    ]);
+
+    res.json({ message: 'Pergunta atualizada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao atualizar pergunta:', error);
+    res.status(500).json({ message: 'Erro ao atualizar pergunta' });
+  }
+});
+
+// Deletar pergunta (apenas criador ou admin)
+app.delete('/api/my-quizzes/:quizId/questions/:questionId', authenticateToken, async (req, res) => {
+  try {
+    const { quizId, questionId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.is_admin;
+
+    // Verificar se o quiz pertence ao usuário ou se é admin
+    const [quizzes] = await pool.execute(
+      'SELECT * FROM quizzes WHERE id = ? AND (created_by = ? OR ? = TRUE)',
+      [quizId, userId, isAdmin]
+    );
+
+    if (quizzes.length === 0) {
+      return res.status(403).json({ message: 'Você não tem permissão para deletar perguntas deste quiz' });
+    }
+
+    await pool.execute('DELETE FROM quiz_questions WHERE id = ? AND quiz_id = ?', [questionId, quizId]);
+    res.json({ message: 'Pergunta deletada com sucesso' });
+  } catch (error) {
+    console.error('Erro ao deletar pergunta:', error);
+    res.status(500).json({ message: 'Erro ao deletar pergunta' });
   }
 });
 
@@ -2321,7 +2768,14 @@ io.on('connection', (socket) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-  console.log(`Socket.io habilitado para multiplayer`);
+server.listen(PORT, HOST, () => {
+  console.log('\n🚀 Servidor Green Mind iniciado com sucesso!\n');
+  console.log(`📍 Servidor rodando em:`);
+  console.log(`   - Local:   http://localhost:${PORT}`);
+  console.log(`   - Rede LAN: http://${localIP}:${PORT}`);
+  console.log(`\n🔌 Socket.io habilitado para multiplayer`);
+  console.log(`\n💡 Para acessar de outros dispositivos na LAN:`);
+  console.log(`   1. Configure o frontend para usar: http://${localIP}:${PORT}`);
+  console.log(`   2. Certifique-se de que o firewall permite conexões na porta ${PORT}`);
+  console.log(`   3. Outros dispositivos devem estar na mesma rede WiFi/Ethernet\n`);
 });

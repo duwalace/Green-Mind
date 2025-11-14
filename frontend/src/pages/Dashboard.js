@@ -7,6 +7,7 @@ import AdminCourses from './AdminCourses';
 import AdminTrails from './AdminTrails';
 import AdminUsers from './AdminUsers';
 import AdminLessons from './AdminLessons';
+import AdminQuizzes from './AdminQuizzes';
 import DashboardReports from './DashboardReports';
 
 const Dashboard = () => {
@@ -15,12 +16,13 @@ const Dashboard = () => {
       <DashboardSidebar />
       <Box component="main" sx={{ flexGrow: 1, width: '100%' }}>
         <Toolbar />
-        <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <Box sx={{ p: { xs: 2, md: 4 } }}>
           <Routes>
             <Route path="/" element={<DashboardOverview />} />
             <Route path="/courses" element={<AdminCourses />} />
             <Route path="/trails" element={<AdminTrails />} />
             <Route path="/lessons" element={<AdminLessons />} />
+            <Route path="/quizzes" element={<AdminQuizzes />} />
             <Route path="/users" element={<AdminUsers />} />
             <Route path="/reports" element={<DashboardReports />} />
             <Route path="*" element={<Navigate to="/dashboard" />} />

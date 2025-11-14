@@ -37,11 +37,15 @@ export const AuthProvider = ({ children }) => {
       setUser(user);
       setIsAuthenticated(true);
     } catch (error) {
-      console.error('Erro na verificação de autenticação:', error);
+      // Apenas remove o token e reseta o estado, sem logar erro se for 401/403
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.log('Token inválido ou expirado, usuário não autenticado');
+      } else {
+        console.error('Erro na verificação de autenticação:', error);
+      }
       localStorage.removeItem('token');
       setUser(null);
       setIsAuthenticated(false);
-      setError(error.response?.data?.message || 'Erro na verificação de autenticação');
     } finally {
       setLoading(false);
     }

@@ -509,8 +509,7 @@ const AdminLessons = () => {
   if (!selectedCourse) {
     return (
       <Box sx={{ 
-        p: { xs: 2, md: 4 },
-        background: 'linear-gradient(135deg, #F5F7FA 0%, #E8EEF2 100%)',
+        width: '100%',
         minHeight: '100vh'
       }}>
         {/* Header */}
@@ -567,8 +566,7 @@ const AdminLessons = () => {
 
   return (
     <Box sx={{ 
-      p: { xs: 2, md: 4 },
-      background: 'linear-gradient(135deg, #F5F7FA 0%, #E8EEF2 100%)',
+      width: '100%',
       minHeight: '100vh'
     }}>
       {/* Header com curso selecionado */}

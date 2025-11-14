@@ -16,14 +16,14 @@ import {
   ListItemText,
   useMediaQuery
 } from '@mui/material';
-import { Menu as MenuIcon, Person as PersonIcon, ExitToApp as ExitToAppIcon, EmojiEvents as EmojiEventsIcon } from '@mui/icons-material';
+import { Menu as MenuIcon, Person as PersonIcon, ExitToApp as ExitToAppIcon, Quiz as QuizIcon } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
 const navLinks = [
   { text: 'Lar', path: '/' },
   { text: 'Trilhas', path: '/trails' },
   { text: 'Cursos', path: '/courses' },
-  { text: 'Conquistas', path: '/achievements' }
+  { text: 'Quizzes', path: '/quizzes' }
 ];
 
 const Header = () => {
@@ -168,13 +168,13 @@ const Header = () => {
                       <ListItemText>Dashboard</ListItemText>
                     </MenuItem>
                   )}
+                  <MenuItem onClick={() => { handleCloseUserMenu(); navigate('/my-quizzes'); }}>
+                    <ListItemIcon><QuizIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Meus Quizzes</ListItemText>
+                  </MenuItem>
                   <MenuItem onClick={() => { handleCloseUserMenu(); navigate('/profile'); }}>
                     <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
                     <ListItemText>Perfil</ListItemText>
-                  </MenuItem>
-                  <MenuItem onClick={() => { handleCloseUserMenu(); navigate('/achievements'); }}>
-                    <ListItemIcon><EmojiEventsIcon fontSize="small" /></ListItemIcon>
-                    <ListItemText>Conquistas</ListItemText>
                   </MenuItem>
                   <MenuItem onClick={() => { handleCloseUserMenu(); handleLogout(); }}>
                     <ListItemIcon><ExitToAppIcon fontSize="small" /></ListItemIcon>

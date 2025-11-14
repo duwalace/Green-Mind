@@ -86,38 +86,10 @@ const Profile = () => {
   const stats = {
     completedCourses: 12,
     totalPoints: 2500,
-    achievements: 8,
     level: user?.level || 1,
     xp: 750,
     nextLevelXp: 1000
   };
-
-  const achievements = [
-    {
-      id: 1,
-      title: 'Primeiro Passo',
-      description: 'Completou sua primeira lição',
-      icon: <TrophyIcon sx={{ color: '#FFD700' }} />,
-      date: '2024-01-15',
-      points: 100
-    },
-    {
-      id: 2,
-      title: 'Mestre da Água',
-      description: 'Completou todas as lições sobre água',
-      icon: <WaterIcon sx={{ color: '#2196F3' }} />,
-      date: '2024-01-20',
-      points: 500
-    },
-    {
-      id: 3,
-      title: 'Energia Verde',
-      description: 'Aprendeu sobre energia renovável',
-      icon: <EnergyIcon sx={{ color: '#FFC107' }} />,
-      date: '2024-01-25',
-      points: 300
-    }
-  ];
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -367,7 +339,7 @@ const Profile = () => {
               </Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={4}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="primary" sx={{ fontWeight: 700 }}>
                 {stats.totalPoints}
@@ -377,17 +349,7 @@ const Profile = () => {
               </Typography>
             </Box>
           </Grid>
-          <Grid item xs={6} sm={3}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" color="primary" sx={{ fontWeight: 700 }}>
-                {stats.achievements}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Conquistas
-              </Typography>
-            </Box>
-          </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={4}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="primary" sx={{ fontWeight: 700 }}>
                 {stats.level}
@@ -423,56 +385,6 @@ const Profile = () => {
         </Box>
       </CardContent>
     </Card>
-  );
-
-  const AchievementsList = () => (
-    <Grid container spacing={2}>
-      {achievements.map((achievement) => (
-        <Grid item xs={12} sm={6} md={4} key={achievement.id}>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Card
-              sx={{
-                height: '100%',
-                borderRadius: 2,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
-                transition: 'transform 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)'
-                }
-              }}
-            >
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  {achievement.icon}
-                  <Typography variant="h6" sx={{ ml: 1, fontWeight: 600 }}>
-                    {achievement.title}
-                  </Typography>
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  {achievement.description}
-                </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Chip
-                    icon={<StarIcon sx={{ fontSize: 16 }} />}
-                    label={`${achievement.points} pontos`}
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    {new Date(achievement.date).toLocaleDateString()}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </Grid>
-      ))}
-    </Grid>
   );
 
   const EditProfileDialog = () => {
@@ -659,21 +571,19 @@ const Profile = () => {
                 }
               }}
             >
-              <Tab label="Conquistas" />
               <Tab label="Progresso" />
               <Tab label="Atividade" />
             </Tabs>
 
             <Box sx={{ p: 3 }}>
-              {tabValue === 0 && <AchievementsList />}
-              {tabValue === 1 && (
+              {tabValue === 0 && (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <Typography variant="h6" color="text.secondary">
                     Em breve: Gráficos de progresso detalhados
                   </Typography>
                 </Box>
               )}
-              {tabValue === 2 && (
+              {tabValue === 1 && (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <Typography variant="h6" color="text.secondary">
                     Em breve: Histórico de atividades

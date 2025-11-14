@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-// Temporarily hardcode the API URL for testing
-const apiUrl = 'http://localhost:3001/api';
+// Usar variável de ambiente ou fallback para localhost
+const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+
+console.log('🌐 API Service inicializado com URL:', apiUrl);
 
 // Create axios instance with default config
 const api = axios.create({

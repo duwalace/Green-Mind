@@ -1,11 +1,13 @@
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = 'http://localhost:3001';
+// Usar variável de ambiente ou fallback para localhost
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001';
 
 class SocketService {
   constructor() {
     this.socket = null;
     this.connected = false;
+    console.log('🔌 Socket Service inicializado com URL:', SOCKET_URL);
   }
 
   connect() {

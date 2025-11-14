@@ -27,6 +27,7 @@ const AdminLessons = lazy(() => import('./pages/AdminLessons'));
 const Quizzes = lazy(() => import('./pages/Quizzes'));
 const QuizPlay = lazy(() => import('./pages/QuizPlay'));
 const QuizResults = lazy(() => import('./pages/QuizResults'));
+const MyQuizzes = lazy(() => import('./pages/MyQuizzes'));
 const AdminQuizzes = lazy(() => import('./pages/AdminQuizzes'));
 
 // Páginas Multiplayer
@@ -71,10 +72,13 @@ const App = () => {
             <Route path="/courses/:courseId/level" element={<TrailLevel />} />
             <Route path="/courses/:id" element={<CourseDetails />} />
             
-            {/* Quiz Routes */}
+            {/* Quiz Routes - Públicas (não requerem login) */}
             <Route path="/quizzes" element={<Quizzes />} />
-            <Route path="/quiz-play/:quizId" element={<PrivateRoute><QuizPlay /></PrivateRoute>} />
-            <Route path="/quiz-results/:attemptId" element={<PrivateRoute><QuizResults /></PrivateRoute>} />
+            <Route path="/quiz-play/:quizId" element={<QuizPlay />} />
+            <Route path="/quiz-results/:attemptId" element={<QuizResults />} />
+            
+            {/* My Quizzes - Criar e gerenciar próprios quizzes */}
+            <Route path="/my-quizzes" element={<PrivateRoute><MyQuizzes /></PrivateRoute>} />
             
             {/* Multiplayer Routes */}
             <Route path="/multiplayer/create" element={<PrivateRoute><QuizMultiplayerHost /></PrivateRoute>} />

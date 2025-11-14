@@ -23,7 +23,6 @@ import {
   Menu as MenuIcon,
   Home as HomeIcon,
   School as SchoolIcon,
-  EmojiEvents as EmojiEventsIcon,
   Person as PersonIcon,
   ExitToApp as ExitToAppIcon
 } from '@mui/icons-material';
@@ -53,8 +52,7 @@ const Layout = ({ children }) => {
 
   const menuItems = [
     { text: 'Início', icon: <HomeIcon />, path: '/' },
-    { text: 'Trilhas', icon: <SchoolIcon />, path: '/trails' },
-    { text: 'Conquistas', icon: <EmojiEventsIcon />, path: '/achievements' }
+    { text: 'Trilhas', icon: <SchoolIcon />, path: '/trails' }
   ];
 
   const drawer = (

@@ -73,6 +73,7 @@ function Quizzes() {
 
   return (
     <Box sx={{ 
+      mt: 8,
       minHeight: '100vh',
       background: 'linear-gradient(180deg, #FAFAFA 0%, #F5F5F5 100%)',
       py: 6
@@ -143,6 +144,25 @@ function Quizzes() {
             }}
           />
         </Box>
+
+        {/* Info Banner - Não precisa de login */}
+        <Alert 
+          severity="info" 
+          icon={<LoginIcon />}
+          sx={{ 
+            mb: 4, 
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)',
+            border: '2px solid #2196F3',
+            '& .MuiAlert-icon': {
+              color: '#1976D2'
+            }
+          }}
+        >
+          <Typography variant="body1" sx={{ fontWeight: 600, color: '#1565C0' }}>
+            ✨ Você pode jogar quizzes sem fazer login! Mas se quiser salvar seu progresso e aparecer no ranking, faça login ou cadastre-se.
+          </Typography>
+        </Alert>
 
         {/* Error Message */}
         {error && (

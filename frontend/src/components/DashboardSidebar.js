@@ -27,7 +27,8 @@ import {
   Help as HelpIcon,
   Logout as LogoutIcon,
   ChevronLeft as ChevronLeftIcon,
-  ChevronRight as ChevronRightIcon
+  ChevronRight as ChevronRightIcon,
+  Quiz as QuizIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
@@ -54,6 +55,11 @@ const menuItems = [
     text: 'Aulas',
     icon: <AssignmentIcon />,
     path: '/dashboard/lessons'
+  },
+  {
+    text: 'Quizzes',
+    icon: <QuizIcon />,
+    path: '/dashboard/quizzes'
   },
   {
     text: 'Usuários',
