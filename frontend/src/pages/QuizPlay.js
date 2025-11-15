@@ -126,13 +126,15 @@ function QuizPlay() {
         setScore(score + response.data.pointsEarned);
         setCorrectCount(correctCount + 1);
       }
-
-      // Aguardar 3 segundos antes de ir para próxima pergunta
-      setTimeout(() => {
-        nextQuestion();
-      }, 3000);
     } catch (error) {
       console.error('Erro ao submeter resposta:', error);
+      // Mesmo com erro, o quiz continuará normalmente
+    } finally {
+      // Aguardar 1.5 segundos antes de ir para próxima pergunta
+      // SEMPRE avançar, mesmo se houver erro
+      setTimeout(() => {
+        nextQuestion();
+      }, 1500);
     }
   };
 
