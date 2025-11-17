@@ -17,7 +17,7 @@ Plataforma educacional focada em sustentabilidade com sistema de **quizzes multi
 
 ```bash
 # Duplo clique ou execute no terminal:
-start-lan.bat
+scripts/start-lan.bat
 ```
 
 Este script irá:
@@ -38,12 +38,14 @@ Exemplo: `http://192.168.1.100:3000`
 
 ```bash
 # Executar como Administrador:
-configure-firewall.bat
+scripts/configure-firewall.bat
 ```
 
 ## 📖 Documentação
 
-- **[GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)** - Guia completo e único para LAN e Quizzes
+- **[Guia LAN Completo](docs/GUIA_LAN_COMPLETO.md)** - Guia completo para LAN e Quizzes
+- **[Scripts](scripts/README.md)** - Documentação dos scripts de inicialização
+- **[Database](database/README.md)** - Informações sobre o banco de dados
 
 ## 🎮 Como Jogar Quiz Multiplayer
 
@@ -121,7 +123,7 @@ REACT_APP_SOCKET_URL=http://SEU_IP:3001
 
 ```bash
 # Verificar se tudo está configurado corretamente:
-test-connection.bat
+scripts/test-connection.bat
 ```
 
 ## 📦 Tecnologias Utilizadas
@@ -145,26 +147,44 @@ test-connection.bat
 
 ```
 Green-Mind/
-├── backend/                  # API e WebSocket
-│   ├── server.js            # Servidor principal
-│   ├── roomManager.js       # Gerenciador de salas multiplayer
-│   ├── config/              # Configurações do banco
-│   └── uploads/             # Arquivos enviados
+├── 📂 backend/                     # API e WebSocket
+│   ├── server.js                  # Servidor principal
+│   ├── roomManager.js             # Gerenciador de salas multiplayer
+│   ├── config/                    # Configurações do banco
+│   │   ├── database.js            
+│   │   └── blocklist.js           # Lista de palavras ofensivas
+│   ├── utils/                     # Utilitários
+│   │   └── contentValidator.js    # Validador de conteúdo
+│   └── uploads/                   # Arquivos enviados
 │
-├── frontend/                # Interface React
+├── 📂 frontend/                    # Interface React
 │   ├── src/
-│   │   ├── components/      # Componentes reutilizáveis
-│   │   ├── pages/           # Páginas da aplicação
-│   │   ├── services/        # API e Socket.io
-│   │   └── contexts/        # Contextos React
-│   └── public/              # Recursos estáticos
+│   │   ├── components/            # Componentes reutilizáveis
+│   │   ├── pages/                 # Páginas da aplicação
+│   │   ├── services/              # API e Socket.io
+│   │   ├── contexts/              # Contextos React
+│   │   └── utils/                 # Utilitários frontend
+│   │       ├── avatarUtils.js
+│   │       └── contentValidator.js # Validador de conteúdo
+│   └── public/                    # Recursos estáticos
 │
-├── start-lan.bat            # Script de inicialização LAN (Windows)
-├── start-lan.ps1            # Script PowerShell (alternativa)
-├── configure-firewall.bat   # Configurar firewall
-├── test-connection.bat      # Testar conexão
+├── 📂 scripts/                     # Scripts de inicialização
+│   ├── start-lan.bat              # Inicialização automática (Windows)
+│   ├── start-lan-manual.bat       # Inicialização manual (múltiplos IPs)
+│   ├── start-lan.ps1              # Script PowerShell
+│   ├── configure-firewall.bat     # Configurar firewall
+│   ├── test-connection.bat        # Testar conexão
+│   └── README.md                  # Documentação dos scripts
 │
-└── GUIA_LAN_COMPLETO.md    # Guia completo para LAN e Quizzes
+├── 📂 database/                    # Banco de dados
+│   ├── db.sql                     # Script SQL unificado
+│   └── README.md                  # Documentação do banco
+│
+├── 📂 docs/                        # Documentação
+│   ├── GUIA_LAN_COMPLETO.md       # Guia completo LAN
+│   └── README.md                  # Índice da documentação
+│
+└── README.md                       # Este arquivo
 ```
 
 ## 🎓 Casos de Uso
@@ -201,9 +221,9 @@ Para uso em produção/Internet:
 ## 🐛 Solução de Problemas
 
 ### Não consigo acessar de outro dispositivo:
-1. Execute `configure-firewall.bat` como administrador
+1. Execute `scripts/configure-firewall.bat` como administrador
 2. Verifique se todos estão na mesma rede WiFi
-3. Teste com `test-connection.bat`
+3. Teste com `scripts/test-connection.bat`
 
 ### Socket.io não conecta:
 1. Verifique o arquivo `frontend/.env`
@@ -216,7 +236,7 @@ Para uso em produção/Internet:
 3. Verifique no painel Admin → Quizzes
 
 ### Mais problemas?
-Consulte: **[GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)** - Seção "Solução de Problemas"
+Consulte: **[GUIA_LAN_COMPLETO.md](docs/GUIA_LAN_COMPLETO.md)** - Seção "Solução de Problemas"
 
 ## 📱 Requisitos de Rede
 
@@ -246,12 +266,11 @@ Contribuições são bem-vindas! Por favor:
 
 ## 📞 Suporte
 
-- **Documentação completa:** [GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)
-  - Configuração LAN passo a passo
-  - Sistema de Quizzes
-  - Quiz Multiplayer
-  - Solução de problemas
-  - Dicas e boas práticas
+- **Documentação completa:** 
+  - [Guia LAN Completo](docs/GUIA_LAN_COMPLETO.md) - Configuração passo a passo
+  - [Scripts](scripts/README.md) - Documentação dos scripts
+  - [Database](database/README.md) - Informações do banco de dados
+  - [Docs](docs/README.md) - Índice de toda documentação
 
 ---
 
