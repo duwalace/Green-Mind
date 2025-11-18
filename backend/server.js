@@ -9,7 +9,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const roomManager = require('./roomManager');
 const os = require('os');
-const contentValidator = require('./utils/contentValidator');
 
 // Carregar variáveis de ambiente se existir .env
 try {
@@ -1757,20 +1756,6 @@ app.post('/api/my-quizzes', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Título é obrigatório' });
     }
 
-    // Validar título
-    const titleValidation = contentValidator.validateQuizTitle(title);
-    if (!titleValidation.valid) {
-      return res.status(400).json({ message: titleValidation.reason });
-    }
-
-    // Validar descrição (se fornecida)
-    if (description) {
-      const descValidation = contentValidator.validateQuizDescription(description);
-      if (!descValidation.valid) {
-        return res.status(400).json({ message: descValidation.reason });
-      }
-    }
-
     const [result] = await pool.execute(`
       INSERT INTO quizzes (
         title, description, course_id, trail_id, image_url,
@@ -1970,28 +1955,6 @@ app.post('/api/my-quizzes/:quizId/questions', authenticateToken, async (req, res
       return res.status(400).json({ message: 'Pergunta e resposta correta são obrigatórios' });
     }
 
-    // Validar texto da pergunta
-    const questionValidation = contentValidator.validateQuizQuestion(question_text);
-    if (!questionValidation.valid) {
-      return res.status(400).json({ message: questionValidation.reason });
-    }
-
-    // Validar opções (se fornecidas)
-    if (options && Array.isArray(options)) {
-      const optionsValidation = contentValidator.validateQuizOptions(options);
-      if (!optionsValidation.valid) {
-        return res.status(400).json({ message: optionsValidation.reason });
-      }
-    }
-
-    // Validar explicação (se fornecida)
-    if (explanation) {
-      const explanationValidation = contentValidator.validateQuizExplanation(explanation);
-      if (!explanationValidation.valid) {
-        return res.status(400).json({ message: explanationValidation.reason });
-      }
-    }
-
     const [result] = await pool.execute(`
       INSERT INTO quiz_questions (
         quiz_id, question_text, question_type, image_url,
@@ -2153,20 +2116,6 @@ app.post('/api/admin/quizzes', authenticateToken, isAdmin, async (req, res) => {
       return res.status(400).json({ message: 'Título é obrigatório' });
     }
 
-    // Validar título
-    const titleValidation = contentValidator.validateQuizTitle(title);
-    if (!titleValidation.valid) {
-      return res.status(400).json({ message: titleValidation.reason });
-    }
-
-    // Validar descrição (se fornecida)
-    if (description) {
-      const descValidation = contentValidator.validateQuizDescription(description);
-      if (!descValidation.valid) {
-        return res.status(400).json({ message: descValidation.reason });
-      }
-    }
-
     const [result] = await pool.execute(`
       INSERT INTO quizzes (
         title, description, course_id, trail_id, image_url,
@@ -2278,28 +2227,6 @@ app.post('/api/admin/quizzes/:quizId/questions', authenticateToken, isAdmin, asy
 
     if (!question_text || !correct_answer) {
       return res.status(400).json({ message: 'Pergunta e resposta correta são obrigatórios' });
-    }
-
-    // Validar texto da pergunta
-    const questionValidation = contentValidator.validateQuizQuestion(question_text);
-    if (!questionValidation.valid) {
-      return res.status(400).json({ message: questionValidation.reason });
-    }
-
-    // Validar opções (se fornecidas)
-    if (options && Array.isArray(options)) {
-      const optionsValidation = contentValidator.validateQuizOptions(options);
-      if (!optionsValidation.valid) {
-        return res.status(400).json({ message: optionsValidation.reason });
-      }
-    }
-
-    // Validar explicação (se fornecida)
-    if (explanation) {
-      const explanationValidation = contentValidator.validateQuizExplanation(explanation);
-      if (!explanationValidation.valid) {
-        return res.status(400).json({ message: explanationValidation.reason });
-      }
     }
 
     const [result] = await pool.execute(`

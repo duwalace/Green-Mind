@@ -19,7 +19,6 @@ import {
 } from '@mui/icons-material';
 import socketService from '../services/socket';
 import api from '../services/api';
-import { validatePlayerName, validateRoomCode } from '../utils/contentValidator';
 
 function QuizMultiplayerJoin() {
   const navigate = useNavigate();
@@ -47,17 +46,24 @@ function QuizMultiplayerJoin() {
   ];
 
   const handleJoinRoom = async () => {
-    // Validar código da sala
-    const roomCodeValidation = validateRoomCode(roomCode.trim());
-    if (!roomCodeValidation.valid) {
-      setError(roomCodeValidation.reason);
+    // Validações
+    if (!roomCode.trim()) {
+      setError('Digite o código da sala');
       return;
     }
 
-    // Validar nome do jogador
-    const nameValidation = validatePlayerName(playerName.trim());
-    if (!nameValidation.valid) {
-      setError(nameValidation.reason);
+    if (!playerName.trim()) {
+      setError('Digite seu nome');
+      return;
+    }
+
+    if (playerName.trim().length < 2) {
+      setError('Nome deve ter pelo menos 2 caracteres');
+      return;
+    }
+
+    if (playerName.trim().length > 20) {
+      setError('Nome deve ter no máximo 20 caracteres');
       return;
     }
 
