@@ -23,6 +23,7 @@ import {
   ArrowBack as ArrowBackIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+import api from '../services/api';
 import Footer from '../components/Footer';
 
 const CourseDetails = () => {

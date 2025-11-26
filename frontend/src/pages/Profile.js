@@ -58,6 +58,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import api from '../services/api';
 
 const Profile = () => {
   const theme = useTheme();
