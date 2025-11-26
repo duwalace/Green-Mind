@@ -49,6 +49,8 @@ function MyQuizzes() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    course_id: null,
+    trail_id: null,
     difficulty_level: 'beginner',
     time_limit_seconds: 300,
     points_per_question: 100,
@@ -82,6 +84,8 @@ function MyQuizzes() {
       setFormData({
         title: quiz.title,
         description: quiz.description || '',
+        course_id: quiz.course_id || null,
+        trail_id: quiz.trail_id || null,
         difficulty_level: quiz.difficulty_level || 'beginner',
         time_limit_seconds: quiz.time_limit_seconds || 300,
         points_per_question: quiz.points_per_question || 100,
@@ -94,6 +98,8 @@ function MyQuizzes() {
       setFormData({
         title: '',
         description: '',
+        course_id: null,
+        trail_id: null,
         difficulty_level: 'beginner',
         time_limit_seconds: 300,
         points_per_question: 100,
@@ -112,6 +118,30 @@ function MyQuizzes() {
 
   const handleSubmit = async () => {
     try {
+      // 🔧 VALIDAÇÃO: Verificar se o título foi preenchido
+      if (!formData.title || formData.title.trim() === '') {
+        setError('O título do quiz é obrigatório!');
+        return;
+      }
+
+      // 🔧 VALIDAÇÃO: Verificar campos numéricos
+      if (formData.time_limit_seconds < 1) {
+        setError('Tempo limite deve ser maior que 0 segundos');
+        return;
+      }
+
+      if (formData.points_per_question < 1) {
+        setError('Pontos por pergunta deve ser maior que 0');
+        return;
+      }
+
+      if (formData.passing_score < 0 || formData.passing_score > 100) {
+        setError('Nota mínima deve estar entre 0 e 100');
+        return;
+      }
+
+      console.log('📤 [MY QUIZZES] Enviando dados:', formData);
+
       if (editingQuiz) {
         await api.put(`/my-quizzes/${editingQuiz.id}`, formData);
         setSuccess('Quiz atualizado com sucesso!');
@@ -122,8 +152,21 @@ function MyQuizzes() {
       handleCloseDialog();
       fetchMyQuizzes();
     } catch (err) {
-      console.error('Erro ao salvar quiz:', err);
-      setError(err.response?.data?.message || 'Erro ao salvar quiz.');
+      console.error('❌ [MY QUIZZES] Erro ao salvar quiz:', err);
+      console.error('❌ [MY QUIZZES] Dados enviados:', formData);
+      console.error('❌ [MY QUIZZES] Resposta do servidor:', err.response?.data);
+      
+      let errorMessage = err.response?.data?.message || 'Erro ao salvar quiz.';
+      
+      // Adicionar detalhes técnicos se disponíveis
+      if (err.response?.data?.details) {
+        errorMessage += ` - Detalhes: ${err.response.data.details}`;
+      }
+      if (err.response?.data?.error) {
+        errorMessage += ` - Erro técnico: ${err.response.data.error}`;
+      }
+      
+      setError(errorMessage);
     }
   };
 
@@ -366,7 +409,7 @@ function MyQuizzes() {
                       <Button
                         size="small"
                         startIcon={<QuestionIcon />}
-                        onClick={() => navigate(`/dashboard/quizzes?quiz=${quiz.id}`)}
+                        onClick={() => navigate(`/my-quizzes/${quiz.id}/questions`)}
                         sx={{ flex: 1 }}
                       >
                         Perguntas

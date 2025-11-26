@@ -40,8 +40,9 @@ const CourseDetails = () => {
     const fetchCourseData = async () => {
       try {
         const [courseResponse, lessonsResponse] = await Promise.all([
-          axios.get(`http://localhost:3001/api/courses/${id}`),
-          axios.get(`http://localhost:3001/api/courses/${id}/lessons`)
+          // 🔧 CORRIGIDO: Usar api service
+          api.get(`/courses/${id}`),
+          api.get(`/courses/${id}/lessons`)
         ]);
         
         setCourse(courseResponse.data.course);

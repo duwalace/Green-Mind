@@ -2,6 +2,16 @@
 
 Plataforma educacional focada em sustentabilidade com sistema de **quizzes multiplayer** para jogar em rede local (LAN).
 
+---
+
+## 📚 Documentação
+
+**🚀 Começando agora?** → [INICIO_RAPIDO.md](INICIO_RAPIDO.md) (2 minutos)  
+**📖 Guia completo?** → [GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)  
+**📑 Ver todos os documentos?** → [DOCUMENTACAO.md](DOCUMENTACAO.md) (índice completo)
+
+---
+
 ## 🎯 Funcionalidades Principais
 
 - 📚 Sistema de cursos e trilhas de aprendizado
@@ -10,21 +20,53 @@ Plataforma educacional focada em sustentabilidade com sistema de **quizzes multi
 - 📊 Leaderboard e pontuação em tempo real
 - 👨‍🏫 Painel administrativo completo
 - 🎨 Interface moderna e responsiva
+- 🚫 **Filtro de Profanidade** para conteúdo apropriado (PT-BR)
 
 ## 🚀 Iniciar em Rede LAN (Recomendado)
 
-### Método Rápido (Windows):
+### ⚡ Método Rápido (Windows):
 
+**1. Primeiro, teste sua configuração:**
 ```bash
-# Duplo clique ou execute no terminal:
+test-lan.bat
+```
+
+**2. Inicie em modo LAN:**
+```bash
 start-lan.bat
 ```
 
-Este script irá:
-- ✅ Detectar automaticamente o IP da sua máquina
-- ✅ Configurar backend e frontend
-- ✅ Instalar dependências
-- ✅ Iniciar os servidores
+**3. Configure o Firewall (como Administrador):**
+```bash
+configure-firewall.bat
+```
+
+### 📋 O que os scripts fazem:
+
+#### `test-lan.bat` 🆕
+- ✅ Verifica MySQL rodando
+- ✅ Verifica Node.js instalado
+- ✅ Testa configuração de rede
+- ✅ Valida firewall
+- ✅ Gera relatório completo
+
+#### `start-lan.bat` ✨
+- ✅ Detecta automaticamente o IP da sua máquina
+- ✅ Faz backup das configurações atuais 🆕
+- ✅ Verifica se MySQL está rodando 🆕
+- ✅ Configura backend e frontend
+- ✅ Instala dependências
+- ✅ Inicia os servidores
+
+#### `start-lan-manual.bat`
+- ✅ Mostra todos os IPs disponíveis
+- ✅ Permite escolher manualmente
+- ✅ Ideal para múltiplos adaptadores de rede
+
+#### `stop-lan.bat` 🆕
+- ✅ Reverte configurações para localhost
+- ✅ Restaura backups automaticamente
+- ✅ Volta ao modo de desenvolvimento local
 
 ### Acessar de Outros Dispositivos:
 
@@ -34,16 +76,13 @@ http://SEU_IP:3000
 
 Exemplo: `http://192.168.1.100:3000`
 
-### Configurar Firewall (se necessário):
-
-```bash
-# Executar como Administrador:
-configure-firewall.bat
-```
+> **💡 Dica:** Se você reiniciar o computador ou trocar de rede, o IP pode mudar.  
+> Execute `test-lan.bat` para ver o IP atual.
 
 ## 📖 Documentação
 
 - **[GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)** - Guia completo e único para LAN e Quizzes
+- **[FILTRO_PROFANIDADE.md](FILTRO_PROFANIDADE.md)** - Sistema de filtro de conteúdo inapropriado
 
 ## 🎮 Como Jogar Quiz Multiplayer
 
@@ -149,6 +188,9 @@ Green-Mind/
 │   ├── server.js            # Servidor principal
 │   ├── roomManager.js       # Gerenciador de salas multiplayer
 │   ├── config/              # Configurações do banco
+│   ├── utils/               # Utilitários (filtro de profanidade)
+│   ├── .env                 # Configurações do backend
+│   ├── .env.backup         # Backup automático 🆕
 │   └── uploads/             # Arquivos enviados
 │
 ├── frontend/                # Interface React
@@ -157,14 +199,21 @@ Green-Mind/
 │   │   ├── pages/           # Páginas da aplicação
 │   │   ├── services/        # API e Socket.io
 │   │   └── contexts/        # Contextos React
-│   └── public/              # Recursos estáticos
+│   ├── public/              # Recursos estáticos
+│   ├── .env                 # Configurações do frontend
+│   └── .env.backup         # Backup automático 🆕
 │
-├── start-lan.bat            # Script de inicialização LAN (Windows)
-├── start-lan.ps1            # Script PowerShell (alternativa)
-├── configure-firewall.bat   # Configurar firewall
-├── test-connection.bat      # Testar conexão
+├── 🆕 Scripts Windows (melhorados):
+├── test-lan.bat            # 🆕 Testar e diagnosticar configuração
+├── start-lan.bat           # ✨ Iniciar LAN (automático, melhorado)
+├── start-lan-manual.bat    # Iniciar LAN (escolha manual de IP)
+├── stop-lan.bat            # 🆕 Voltar ao modo localhost
+├── configure-firewall.bat  # Configurar firewall do Windows
 │
-└── GUIA_LAN_COMPLETO.md    # Guia completo para LAN e Quizzes
+└── 📖 Documentação:
+    ├── GUIA_LAN_COMPLETO.md # 🆕 Guia profissional completo
+    ├── FILTRO_PROFANIDADE.md # Sistema de moderação
+    └── README.md            # Este arquivo
 ```
 
 ## 🎓 Casos de Uso
@@ -187,6 +236,23 @@ Green-Mind/
 - Feedback instantâneo
 - Engajamento em tempo real
 
+## 🚫 Filtro de Profanidade
+
+Sistema de moderação automática de conteúdo com suporte para **Português (PT-BR)**.
+
+### Onde está ativo:
+- ✅ Títulos e descrições de quizzes
+- ✅ Perguntas e explicações
+- ✅ Nicknames temporários no multiplayer
+
+### Recursos:
+- 🇧🇷 Lista robusta de palavras ofensivas em PT-BR
+- 🔍 Detecta variações e leet speak
+- 📝 Logs automáticos de tentativas
+- ⚡ Zero impacto na performance
+
+📖 **Documentação:** [FILTRO_PROFANIDADE.md](FILTRO_PROFANIDADE.md)
+
 ## 🔒 Segurança
 
 ⚠️ **Importante:** A configuração atual é ideal para uso em **rede local privada**.
@@ -200,23 +266,55 @@ Para uso em produção/Internet:
 
 ## 🐛 Solução de Problemas
 
+### 🆕 Primeiro Passo - Use o Diagnóstico Automático:
+```bash
+test-lan.bat
+```
+Este script verifica automaticamente:
+- ✅ MySQL rodando
+- ✅ Node.js instalado
+- ✅ Arquivos .env configurados
+- ✅ Firewall liberado
+- ✅ Conectividade de rede
+
 ### Não consigo acessar de outro dispositivo:
-1. Execute `configure-firewall.bat` como administrador
-2. Verifique se todos estão na mesma rede WiFi
-3. Teste com `test-connection.bat`
+1. Execute `test-lan.bat` para diagnóstico
+2. Execute `configure-firewall.bat` como administrador
+3. Verifique se todos estão na mesma rede WiFi
+4. Confirme o IP com `ipconfig` no terminal
+
+### MySQL não está rodando:
+1. Abra WAMP ou XAMPP
+2. Clique em "Iniciar MySQL"
+3. Aguarde o ícone ficar verde
+4. Execute `start-lan.bat` novamente
 
 ### Socket.io não conecta:
 1. Verifique o arquivo `frontend/.env`
 2. Reinicie o frontend após alterar `.env`
 3. Limpe cache do navegador (Ctrl+Shift+Del)
+4. Verifique se o backend está rodando na porta 3001
+
+### Quero voltar ao localhost:
+```bash
+stop-lan.bat
+```
+Escolha restaurar backup ou criar configuração localhost padrão.
+
+### IP mudou após reiniciar:
+```bash
+# Execute novamente:
+start-lan.bat
+# Anote o novo IP e compartilhe com os usuários
+```
 
 ### Quiz não aparece:
 1. O quiz deve estar publicado (status: published)
 2. O quiz deve ter perguntas cadastradas
 3. Verifique no painel Admin → Quizzes
 
-### Mais problemas?
-Consulte: **[GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)** - Seção "Solução de Problemas"
+### 📖 Documentação Completa:
+**[GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)** - Troubleshooting detalhado, FAQ e dicas avançadas
 
 ## 📱 Requisitos de Rede
 
@@ -255,7 +353,34 @@ Contribuições são bem-vindas! Por favor:
 
 ---
 
+## 🎉 Novidades da Versão 2.0
+
+### ✨ Sistema LAN Profissional
+- 🆕 **Script de teste e diagnóstico** (`test-lan.bat`)
+- 🆕 **Reversão para localhost** (`stop-lan.bat`)
+- 🆕 **Backup automático** de configurações
+- 🆕 **Validação de MySQL** antes de iniciar
+- 🆕 **Detecção melhorada de IP** com múltiplos adaptadores
+- 🆕 **FAQ e troubleshooting expandido**
+- 🆕 **Guia profissional completo** atualizado
+
+### 🔧 Melhorias Técnicas
+- Validação automática de requisitos
+- Mensagens de erro mais claras
+- Sistema de backup/restore
+- Diagnóstico automático de problemas
+- Documentação profissional
+
+---
+
 **Desenvolvido para Green Mind Educational Platform**  
-Versão: 1.0.0 | Novembro 2024
+**Versão: 2.0.0 - Profissional** | Novembro 2025
 
 🌿 **Educação + Sustentabilidade + Tecnologia** 🌿
+
+---
+
+### 📚 Links Rápidos
+- 📖 **[GUIA_LAN_COMPLETO.md](GUIA_LAN_COMPLETO.md)** - Guia completo e profissional
+- 🚫 **[FILTRO_PROFANIDADE.md](FILTRO_PROFANIDADE.md)** - Sistema de moderação
+- 🐛 **Problemas?** Execute `test-lan.bat` primeiro!

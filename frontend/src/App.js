@@ -28,6 +28,7 @@ const Quizzes = lazy(() => import('./pages/Quizzes'));
 const QuizPlay = lazy(() => import('./pages/QuizPlay'));
 const QuizResults = lazy(() => import('./pages/QuizResults'));
 const MyQuizzes = lazy(() => import('./pages/MyQuizzes'));
+const MyQuizQuestions = lazy(() => import('./pages/MyQuizQuestions'));
 const AdminQuizzes = lazy(() => import('./pages/AdminQuizzes'));
 
 // Páginas Multiplayer
@@ -79,6 +80,7 @@ const App = () => {
             
             {/* My Quizzes - Criar e gerenciar próprios quizzes */}
             <Route path="/my-quizzes" element={<PrivateRoute><MyQuizzes /></PrivateRoute>} />
+            <Route path="/my-quizzes/:quizId/questions" element={<PrivateRoute><MyQuizQuestions /></PrivateRoute>} />
             
             {/* Multiplayer Routes */}
             <Route path="/multiplayer/create" element={<PrivateRoute><QuizMultiplayerHost /></PrivateRoute>} />

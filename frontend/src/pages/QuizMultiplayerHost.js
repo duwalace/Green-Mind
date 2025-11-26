@@ -27,6 +27,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import socketService from '../services/socket';
+import sessionService from '../services/sessionService';
 
 function QuizMultiplayerHost() {
   const navigate = useNavigate();
@@ -68,8 +69,14 @@ function QuizMultiplayerHost() {
       setCreating(true);
       setError('');
 
+      console.log('🚀 [HOST] Iniciando criação de sala...');
+
       // Conectar ao Socket.io
+      console.log('🔌 [HOST] Conectando ao Socket.io...');
       socketService.connect();
+
+      // 🔧 IMPORTANTE: Aguardar um pouco para garantir que o socket conectou
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Criar sala
       const hostData = {
@@ -78,20 +85,36 @@ function QuizMultiplayerHost() {
         avatar: user.avatar
       };
 
+      console.log('📤 [HOST] Emitindo create_room com dados:', { quizId: selectedQuiz.id, hostData });
       const result = await socketService.createRoom(selectedQuiz.id, hostData);
 
-      console.log('Sala criada:', result);
+      console.log('✅ [HOST] Sala criada:', result);
+      console.log('✅ [HOST] Room code:', result.roomCode);
+      console.log('✅ [HOST] Room recebido:', result.room);
+      console.log('✅ [HOST] Players na room:', result.room?.players);
+      console.log('✅ [HOST] Quantidade de players:', result.room?.players?.length);
 
-      // Navegar para o lobby
+      // NÃO salvar sessão aqui - será salvo no lobby após jogo iniciar
+      // O host não precisa de reconexão porque se ele sair, a sala fecha
+
+      // 🔧 CORRIGIDO: Passar room no state para inicializar players no lobby
+      const navigationState = {
+        isHost: true,
+        roomCode: result.roomCode,
+        room: result.room, // 🔧 IMPORTANTE: Passar room com players
+        quiz: selectedQuiz,
+        hostData: hostData
+      };
+      
+      console.log('🎯 [HOST] Estado de navegação:', navigationState);
+      console.log('🎯 [HOST] Players sendo passados:', navigationState.room?.players);
+      console.log('🎯 [HOST] Navegando para lobby...');
+      
       navigate(`/multiplayer/lobby/${result.roomCode}`, {
-        state: {
-          isHost: true,
-          roomCode: result.roomCode,
-          quiz: selectedQuiz
-        }
+        state: navigationState
       });
     } catch (error) {
-      console.error('Erro ao criar sala:', error);
+      console.error('❌ [HOST] Erro ao criar sala:', error);
       setError(error.message || 'Erro ao criar sala');
       setCreating(false);
     }

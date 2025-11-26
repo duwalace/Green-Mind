@@ -36,6 +36,18 @@ echo.
 echo ✅ Usando IP: %IP%
 echo.
 
+:: Backup das configurações existentes
+echo 💾 Fazendo backup das configurações...
+if exist "backend\.env" (
+    copy /Y "backend\.env" "backend\.env.backup" >nul
+    echo ✅ Backup: backend\.env.backup criado
+)
+if exist "frontend\.env" (
+    copy /Y "frontend\.env" "frontend\.env.backup" >nul
+    echo ✅ Backup: frontend\.env.backup criado
+)
+echo.
+
 :: Criar arquivo .env para o backend (se não existir)
 if not exist "backend\.env" (
     echo 📝 Criando arquivo de configuração do backend...
@@ -45,7 +57,7 @@ if not exist "backend\.env" (
         echo HOST=0.0.0.0
         echo.
         echo # JWT Secret
-        echo JWT_SECRET=seu_jwt_secret
+        echo JWT_SECRET=seu_jwt_secret_altere_em_producao
         echo.
         echo # Ambiente
         echo NODE_ENV=development
@@ -65,7 +77,8 @@ if not exist "backend\.env" (
 :: Criar arquivo .env para o frontend
 echo 📝 Configurando frontend para usar IP: %IP%...
 (
-    echo # API Configuration - Gerado automaticamente para LAN
+    echo # API Configuration - Gerado automaticamente para LAN (MANUAL)
+    echo # Backup salvo em frontend\.env.backup
     echo REACT_APP_API_URL=http://%IP%:3001/api
     echo REACT_APP_SOCKET_URL=http://%IP%:3001
 ) > "frontend\.env"
@@ -73,13 +86,36 @@ echo ✅ Arquivo frontend\.env atualizado
 echo.
 
 :: Verificar se o Node está instalado
+echo 🔍 Verificando Node.js...
 where node >nul 2>nul
 if %errorlevel% neq 0 (
     echo ❌ Node.js não encontrado! Por favor, instale o Node.js primeiro.
     echo    Download: https://nodejs.org/
+    echo.
     pause
     exit /b 1
 )
+node --version
+echo ✅ Node.js instalado
+echo.
+
+:: Verificar se o MySQL está rodando (WAMP/XAMPP)
+echo 🔍 Verificando MySQL...
+tasklist /FI "IMAGENAME eq mysqld.exe" 2>NUL | find /I /N "mysqld.exe">NUL
+if %errorlevel% neq 0 (
+    echo ❌ MySQL não está rodando!
+    echo    Por favor, inicie o WAMP ou XAMPP antes de continuar.
+    echo.
+    echo 💡 Passos:
+    echo    1. Abra o WAMP ou XAMPP
+    echo    2. Inicie o MySQL
+    echo    3. Execute este script novamente
+    echo.
+    pause
+    exit /b 1
+)
+echo ✅ MySQL está rodando
+echo.
 
 :: Verificar se as dependências estão instaladas
 echo 📦 Verificando dependências...

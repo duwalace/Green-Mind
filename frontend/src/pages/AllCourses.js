@@ -31,6 +31,7 @@ import {
 import axios from 'axios';
 import { motion } from 'framer-motion';
 import Footer from '../components/Footer';
+import api from '../services/api';
 
 const AllCourses = () => {
   const navigate = useNavigate();
@@ -45,12 +46,14 @@ const AllCourses = () => {
   const [priceFilter, setPriceFilter] = useState('all');
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const API_BASE_URL = 'http://localhost:3001';
+  // 🔧 CORRIGIDO: Obter base URL para imagens
+  const API_BASE_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001';
 
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        const response = await axios.get('http://localhost:3001/api/courses');
+        // 🔧 CORRIGIDO: Usar serviço api que já tem base URL configurada
+        const response = await api.get('/courses');
         setCourses(response.data.courses);
       } catch (err) {
         setError('Erro ao carregar os cursos');

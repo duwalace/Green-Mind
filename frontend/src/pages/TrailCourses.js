@@ -117,7 +117,8 @@ const TrailCourses = () => {
   useEffect(() => {
     const fetchTrailData = async () => {
       try {
-        const response = await axios.get(`http://localhost:3001/api/trails/${trailId}`);
+        // 🔧 CORRIGIDO: Usar api service
+        const response = await api.get(`/trails/${trailId}`);
         setTrail(response.data.trail);
         setCourses(response.data.courses);
         

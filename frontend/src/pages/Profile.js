@@ -114,7 +114,8 @@ const Profile = () => {
 
   const handleEditSave = async () => {
     try {
-      const response = await axios.put('http://localhost:3001/api/users/profile', editForm, {
+      // 🔧 CORRIGIDO: Usar api service
+      const response = await api.put('/users/profile', editForm, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       
@@ -158,7 +159,8 @@ const Profile = () => {
 
     setUploading(true);
     try {
-      const response = await axios.put('http://localhost:3001/api/users/avatar', formData, {
+      // 🔧 CORRIGIDO: Usar api service
+      const response = await api.put('/users/avatar', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${localStorage.getItem('token')}`
@@ -167,7 +169,7 @@ const Profile = () => {
       
       const updatedUser = {
         ...response.data.user,
-        avatar: response.data.user.avatar ? `http://localhost:3001${response.data.user.avatar}` : null
+        avatar: response.data.user.avatar ? `${process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001'}${response.data.user.avatar}` : null
       };
       setUser(updatedUser);
     } catch (error) {
@@ -242,7 +244,7 @@ const Profile = () => {
               }
             >
               <Avatar
-                src={user?.avatar ? (user.avatar.startsWith('http') ? user.avatar : `http://localhost:3001${user.avatar}`) : null}
+                src={user?.avatar ? (user.avatar.startsWith('http') ? user.avatar : `${process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001'}${user.avatar}`) : null}
                 alt={user?.name}
                 sx={{
                   width: 120,
@@ -403,14 +405,15 @@ const Profile = () => {
 
     const handleSave = async () => {
       try {
-        const response = await axios.put('http://localhost:3001/api/users/profile', localForm, {
+        // 🔧 CORRIGIDO: Usar api service
+        const response = await api.put('/users/profile', localForm, {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
         
         // Atualizar o usuário com a URL completa do avatar
         const updatedUser = {
           ...response.data.user,
-          avatar: response.data.user.avatar ? (response.data.user.avatar.startsWith('http') ? response.data.user.avatar : `http://localhost:3001${response.data.user.avatar}`) : null
+          avatar: response.data.user.avatar ? (response.data.user.avatar.startsWith('http') ? response.data.user.avatar : `${process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001'}${response.data.user.avatar}`) : null
         };
         
         setUser(updatedUser);

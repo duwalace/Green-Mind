@@ -22,9 +22,11 @@ import {
   School as SchoolIcon,
   PlayArrow as PlayIcon,
   Group as GroupIcon,
-  Login as LoginIcon
+  Login as LoginIcon,
+  Add as AddIcon
 } from '@mui/icons-material';
 import api from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 function Quizzes() {
   const [quizzes, setQuizzes] = useState([]);
@@ -32,6 +34,7 @@ function Quizzes() {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const theme = useTheme();
+  const { isAuthenticated } = useAuth();
 
   useEffect(() => {
     fetchQuizzes();
@@ -160,7 +163,7 @@ function Quizzes() {
           }}
         >
           <Typography variant="body1" sx={{ fontWeight: 600, color: '#1565C0' }}>
-            ✨ Você pode jogar quizzes sem fazer login! Mas se quiser salvar seu progresso e aparecer no ranking, faça login ou cadastre-se.
+            ✨ Você pode jogar quizzes sem fazer login! Mas se quiser criar um quiz, faça login ou cadastre-se.
           </Typography>
         </Alert>
 
@@ -273,6 +276,100 @@ function Quizzes() {
             }}
           />
         </Box>
+
+        {/* Card Criar Quiz - Apenas para usuários logados */}
+        {isAuthenticated && (
+          <Box
+            sx={{
+              background: 'linear-gradient(135deg, #2E7D32 0%, #43A047 100%)',
+              borderRadius: '20px',
+              p: 4,
+              mb: 4,
+              boxShadow: '0 8px 24px rgba(46, 125, 50, 0.4)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+          >
+            <Grid container spacing={3} alignItems="center">
+              <Grid item xs={12} md={8}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                  <AddIcon sx={{ fontSize: 48, color: '#fff' }} />
+                  <Typography variant="h4" sx={{ color: '#fff', fontWeight: 700 }}>
+                    ✨ Crie seu Próprio Quiz
+                  </Typography>
+                </Box>
+                <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.95)', mb: 2, fontSize: '1.1rem' }}>
+                  Compartilhe conhecimento! Crie quizzes personalizados e desafie outros usuários.
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  <Chip
+                    label="📝 Editor Completo"
+                    sx={{ background: 'rgba(255, 255, 255, 0.2)', color: '#fff', fontWeight: 600 }}
+                  />
+                  <Chip
+                    label="🎯 Perguntas Personalizadas"
+                    sx={{ background: 'rgba(255, 255, 255, 0.2)', color: '#fff', fontWeight: 600 }}
+                  />
+                  <Chip
+                    label="📊 Acompanhe Resultados"
+                    sx={{ background: 'rgba(255, 255, 255, 0.2)', color: '#fff', fontWeight: 600 }}
+                  />
+                </Box>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Button
+                  variant="contained"
+                  size="large"
+                  fullWidth
+                  startIcon={<AddIcon />}
+                  onClick={() => navigate('/my-quizzes')}
+                  sx={{
+                    py: 2.5,
+                    background: '#fff',
+                    color: '#2E7D32',
+                    fontWeight: 700,
+                    fontSize: '1.1rem',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                    '&:hover': {
+                      background: 'rgba(255, 255, 255, 0.95)',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.2)'
+                    }
+                  }}
+                >
+                  Criar Quiz
+                </Button>
+              </Grid>
+            </Grid>
+
+            {/* Decoração */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: -40,
+                right: -40,
+                width: 180,
+                height: 180,
+                borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.08)',
+                backdropFilter: 'blur(10px)'
+              }}
+            />
+            <Box
+              sx={{
+                position: 'absolute',
+                bottom: -30,
+                left: -30,
+                width: 120,
+                height: 120,
+                borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.05)',
+                backdropFilter: 'blur(10px)'
+              }}
+            />
+          </Box>
+        )}
 
         {/* Quizzes Grid */}
         {quizzes.length === 0 ? (

@@ -18,6 +18,7 @@ import {
   Gamepad as GamepadIcon
 } from '@mui/icons-material';
 import socketService from '../services/socket';
+import sessionService from '../services/sessionService';
 import api from '../services/api';
 
 function QuizMultiplayerJoin() {
@@ -71,19 +72,28 @@ function QuizMultiplayerJoin() {
       setJoining(true);
       setError('');
 
+      console.log('🚀 [JOIN] Iniciando entrada na sala...');
+
       // Verificar se sala existe (via REST API)
       const roomCodeUpper = roomCode.toUpperCase().trim();
       
+      console.log('🔍 [JOIN] Verificando se sala existe:', roomCodeUpper);
       try {
         await api.get(`/multiplayer/room/${roomCodeUpper}`);
+        console.log('✅ [JOIN] Sala existe!');
       } catch (err) {
+        console.error('❌ [JOIN] Sala não encontrada:', err);
         setError('Sala não encontrada');
         setJoining(false);
         return;
       }
 
       // Conectar ao Socket.io
+      console.log('🔌 [JOIN] Conectando ao Socket.io...');
       socketService.connect();
+
+      // 🔧 IMPORTANTE: Aguardar um pouco para garantir que o socket conectou
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Entrar na sala
       const playerData = {
@@ -91,21 +101,40 @@ function QuizMultiplayerJoin() {
         avatar: selectedAvatar
       };
 
+      console.log('📤 [JOIN] Emitindo join_room com dados:', { roomCode: roomCodeUpper, playerData });
       const result = await socketService.joinRoom(roomCodeUpper, playerData);
 
-      console.log('Entrou na sala:', result);
+      console.log('✅ [JOIN] Entrou na sala:', result);
+      console.log('✅ [JOIN] Player ID:', result.playerId);
+      console.log('✅ [JOIN] Room:', result.room);
+
+      // Salvar sessão para permitir reconexão
+      const sessionData = {
+        roomCode: roomCodeUpper,
+        playerId: result.playerId,
+        playerName: playerName.trim(),
+        isHost: false,
+        avatar: selectedAvatar
+      };
+      
+      console.log('💾 [JOIN] Salvando sessão:', sessionData);
+      sessionService.saveSession(sessionData);
 
       // Navegar para o lobby
+      const navigationState = {
+        isHost: false,
+        playerId: result.playerId,
+        playerName: playerName.trim(),
+        roomCode: roomCodeUpper,
+        room: result.room // 🔧 Passar room também para jogadores
+      };
+      
+      console.log('🎯 [JOIN] Navegando para lobby com estado:', navigationState);
       navigate(`/multiplayer/lobby/${roomCodeUpper}`, {
-        state: {
-          isHost: false,
-          playerId: result.playerId,
-          playerName: playerName.trim(),
-          roomCode: roomCodeUpper
-        }
+        state: navigationState
       });
     } catch (error) {
-      console.error('Erro ao entrar na sala:', error);
+      console.error('❌ [JOIN] Erro ao entrar na sala:', error);
       setError(error.message || 'Erro ao entrar na sala. Verifique o código e tente novamente.');
       setJoining(false);
     }

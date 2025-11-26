@@ -37,7 +37,11 @@ import {
   Close as CloseIcon
 } from '@mui/icons-material';
 import axios from 'axios';
+import api from '../services/api';
 import Footer from '../components/Footer';
+
+// 🔧 Para URLs de uploads/imagens
+const API_BASE_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001';
 
 const Aulas = () => {
   const { courseId } = useParams();
@@ -67,12 +71,12 @@ const Aulas = () => {
   useEffect(() => {
     const fetchCourseAndLessons = async () => {
       try {
-        // Buscar informações do curso
-        const courseResponse = await axios.get(`http://localhost:3001/api/courses/${courseId}`);
+        // 🔧 CORRIGIDO: Usar api service
+        const courseResponse = await api.get(`/courses/${courseId}`);
         setCourse(courseResponse.data.course);
 
         // Buscar aulas do curso
-        const lessonsResponse = await axios.get(`http://localhost:3001/api/courses/${courseId}/lessons`);
+        const lessonsResponse = await api.get(`/courses/${courseId}/lessons`);
         setLessons(lessonsResponse.data.lessons || []);
       } catch (err) {
         console.error('Erro ao carregar curso e aulas:', err);
@@ -90,7 +94,8 @@ const Aulas = () => {
       if (currentLesson) {
         try {
           setLoadingContents(true);
-          const response = await axios.get(`http://localhost:3001/api/lessons/${currentLesson.id}/contents`);
+          // 🔧 CORRIGIDO: Usar api service
+          const response = await api.get(`/lessons/${currentLesson.id}/contents`);
           console.log('Conteúdos recebidos:', response.data.contents);
           
           // Log detalhado de cada exercício

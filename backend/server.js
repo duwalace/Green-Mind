@@ -9,6 +9,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const roomManager = require('./roomManager');
 const os = require('os');
+const { validateText, logProfanityAttempt } = require('./utils/profanityFilter');
 
 // Carregar variáveis de ambiente se existir .env
 try {
@@ -77,7 +78,16 @@ const corsOptions = {
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: corsOptions
+  cors: corsOptions,
+  // 🆕 Configurações otimizadas para LAN
+  pingTimeout: 60000, // 60 segundos antes de considerar desconectado
+  pingInterval: 25000, // Enviar ping a cada 25 segundos
+  upgradeTimeout: 30000, // 30 segundos para upgrade de polling para websocket
+  maxHttpBufferSize: 1e8, // 100 MB
+  transports: ['websocket', 'polling'], // Preferir WebSocket
+  allowUpgrades: true,
+  perMessageDeflate: false, // Desabilitar compressão para melhor performance em LAN
+  httpCompression: false
 });
 
 app.use(cors(corsOptions));
@@ -1756,6 +1766,34 @@ app.post('/api/my-quizzes', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Título é obrigatório' });
     }
 
+    // Validar profanidade no título
+    const titleValidation = validateText(title, 'quiz_title');
+    if (!titleValidation.valid) {
+      logProfanityAttempt(title, 'quiz_title', req.user.id);
+      return res.status(400).json({ 
+        message: titleValidation.message,
+        field: 'title'
+      });
+    }
+
+    // Validar profanidade na descrição (se fornecida)
+    if (description) {
+      const descValidation = validateText(description, 'quiz_description');
+      if (!descValidation.valid) {
+        logProfanityAttempt(description, 'quiz_description', req.user.id);
+        return res.status(400).json({ 
+          message: descValidation.message,
+          field: 'description'
+        });
+      }
+    }
+
+    // Converter undefined/strings vazias para null (MySQL não aceita undefined)
+    const courseId = course_id === undefined || course_id === '' ? null : course_id;
+    const trailId = trail_id === undefined || trail_id === '' ? null : trail_id;
+    const imageUrl = image_url === undefined || image_url === '' ? null : image_url;
+    const desc = description === undefined || description === '' ? null : description;
+
     const [result] = await pool.execute(`
       INSERT INTO quizzes (
         title, description, course_id, trail_id, image_url,
@@ -1764,10 +1802,10 @@ app.post('/api/my-quizzes', authenticateToken, async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       title,
-      description || null,
-      course_id || null,
-      trail_id || null,
-      image_url || null,
+      desc,
+      courseId,
+      trailId,
+      imageUrl,
       difficulty_level || 'beginner',
       time_limit_seconds || 300,
       points_per_question || 100,
@@ -1781,8 +1819,20 @@ app.post('/api/my-quizzes', authenticateToken, async (req, res) => {
       quizId: result.insertId
     });
   } catch (error) {
-    console.error('Erro ao criar quiz:', error);
-    res.status(500).json({ message: 'Erro ao criar quiz' });
+    console.error('❌ [CRIAR QUIZ] Erro detalhado:', {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack
+    });
+    console.error('❌ [CRIAR QUIZ] Dados recebidos:', req.body);
+    console.error('❌ [CRIAR QUIZ] Usuário:', req.user);
+    res.status(500).json({ 
+      message: 'Erro ao criar quiz',
+      error: error.message,
+      details: error.sqlMessage || error.message
+    });
   }
 });
 
@@ -1833,6 +1883,43 @@ app.get('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
   }
 });
 
+// Obter apenas as perguntas de um quiz do usuário
+app.get('/api/my-quizzes/:quizId/questions', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.is_admin;
+
+    // Verificar se o quiz pertence ao usuário ou se é admin
+    const [quizzes] = await pool.execute(
+      'SELECT id FROM quizzes WHERE id = ? AND (created_by = ? OR ? = TRUE)',
+      [quizId, userId, isAdmin]
+    );
+
+    if (quizzes.length === 0) {
+      return res.status(403).json({ message: 'Você não tem permissão para acessar este quiz' });
+    }
+
+    // Buscar perguntas (com resposta correta para edição)
+    const [questions] = await pool.execute(`
+      SELECT * FROM quiz_questions
+      WHERE quiz_id = ?
+      ORDER BY sequence_order ASC
+    `, [quizId]);
+
+    // Parse JSON options
+    const parsedQuestions = questions.map(q => ({
+      ...q,
+      options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options
+    }));
+
+    res.json({ questions: parsedQuestions });
+  } catch (error) {
+    console.error('Erro ao buscar perguntas:', error);
+    res.status(500).json({ message: 'Erro ao buscar perguntas' });
+  }
+});
+
 // Atualizar quiz (apenas criador ou admin)
 app.put('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
   try {
@@ -1863,6 +1950,12 @@ app.put('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
       status
     } = req.body;
 
+    // Converter undefined para null (MySQL não aceita undefined)
+    const courseId = course_id === undefined || course_id === '' ? null : course_id;
+    const trailId = trail_id === undefined || trail_id === '' ? null : trail_id;
+    const imageUrl = image_url === undefined || image_url === '' ? null : image_url;
+    const desc = description === undefined || description === '' ? null : description;
+
     await pool.execute(`
       UPDATE quizzes SET
         title = ?,
@@ -1878,10 +1971,10 @@ app.put('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
       WHERE id = ?
     `, [
       title,
-      description,
-      course_id,
-      trail_id,
-      image_url,
+      desc,
+      courseId,
+      trailId,
+      imageUrl,
       difficulty_level,
       time_limit_seconds,
       points_per_question,
@@ -1892,8 +1985,20 @@ app.put('/api/my-quizzes/:quizId', authenticateToken, async (req, res) => {
 
     res.json({ message: 'Quiz atualizado com sucesso' });
   } catch (error) {
-    console.error('Erro ao atualizar quiz:', error);
-    res.status(500).json({ message: 'Erro ao atualizar quiz' });
+    console.error('❌ [ATUALIZAR QUIZ] Erro detalhado:', {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack
+    });
+    console.error('❌ [ATUALIZAR QUIZ] Dados recebidos:', req.body);
+    console.error('❌ [ATUALIZAR QUIZ] Usuário:', req.user);
+    res.status(500).json({ 
+      message: 'Erro ao atualizar quiz',
+      error: error.message,
+      details: error.sqlMessage || error.message
+    });
   }
 });
 
@@ -1953,6 +2058,28 @@ app.post('/api/my-quizzes/:quizId/questions', authenticateToken, async (req, res
 
     if (!question_text || !correct_answer) {
       return res.status(400).json({ message: 'Pergunta e resposta correta são obrigatórios' });
+    }
+
+    // Validar profanidade na pergunta
+    const questionValidation = validateText(question_text, 'quiz_question');
+    if (!questionValidation.valid) {
+      logProfanityAttempt(question_text, 'quiz_question', userId);
+      return res.status(400).json({ 
+        message: questionValidation.message,
+        field: 'question_text'
+      });
+    }
+
+    // Validar profanidade na explicação (se fornecida)
+    if (explanation) {
+      const explanationValidation = validateText(explanation, 'quiz_explanation');
+      if (!explanationValidation.valid) {
+        logProfanityAttempt(explanation, 'quiz_explanation', userId);
+        return res.status(400).json({ 
+          message: explanationValidation.message,
+          field: 'explanation'
+        });
+      }
     }
 
     const [result] = await pool.execute(`
@@ -2116,6 +2243,28 @@ app.post('/api/admin/quizzes', authenticateToken, isAdmin, async (req, res) => {
       return res.status(400).json({ message: 'Título é obrigatório' });
     }
 
+    // Validar profanidade no título
+    const titleValidation = validateText(title, 'quiz_title');
+    if (!titleValidation.valid) {
+      logProfanityAttempt(title, 'quiz_title_admin', req.user.id);
+      return res.status(400).json({ 
+        message: titleValidation.message,
+        field: 'title'
+      });
+    }
+
+    // Validar profanidade na descrição (se fornecida)
+    if (description) {
+      const descValidation = validateText(description, 'quiz_description');
+      if (!descValidation.valid) {
+        logProfanityAttempt(description, 'quiz_description_admin', req.user.id);
+        return res.status(400).json({ 
+          message: descValidation.message,
+          field: 'description'
+        });
+      }
+    }
+
     const [result] = await pool.execute(`
       INSERT INTO quizzes (
         title, description, course_id, trail_id, image_url,
@@ -2227,6 +2376,28 @@ app.post('/api/admin/quizzes/:quizId/questions', authenticateToken, isAdmin, asy
 
     if (!question_text || !correct_answer) {
       return res.status(400).json({ message: 'Pergunta e resposta correta são obrigatórios' });
+    }
+
+    // Validar profanidade na pergunta
+    const questionValidation = validateText(question_text, 'quiz_question');
+    if (!questionValidation.valid) {
+      logProfanityAttempt(question_text, 'quiz_question_admin', req.user.id);
+      return res.status(400).json({ 
+        message: questionValidation.message,
+        field: 'question_text'
+      });
+    }
+
+    // Validar profanidade na explicação (se fornecida)
+    if (explanation) {
+      const explanationValidation = validateText(explanation, 'quiz_explanation');
+      if (!explanationValidation.valid) {
+        logProfanityAttempt(explanation, 'quiz_explanation_admin', req.user.id);
+        return res.status(400).json({ 
+          message: explanationValidation.message,
+          field: 'explanation'
+        });
+      }
     }
 
     const [result] = await pool.execute(`
@@ -2465,6 +2636,34 @@ app.get('/api/multiplayer/stats', (req, res) => {
 
 // ========== SOCKET.IO - EVENTOS MULTIPLAYER ==========
 
+// 🆕 Configurar callback para quando grace period expirar
+roomManager.onGracePeriodExpired = (data) => {
+  console.log(`⏰ [GRACE PERIOD EXPIRADO]`, data);
+  
+  if (data.type === 'host') {
+    // Host não reconectou, fechar sala
+    console.log(`🚪 [HOST NÃO RECONECTOU] Encerrando sala ${data.roomCode}`);
+    io.to(data.roomCode).emit('room_closed', {
+      message: 'O host não reconectou a tempo. A sala foi encerrada.'
+    });
+    
+    // Remover todos da sala do Socket.io
+    io.in(data.roomCode).socketsLeave(data.roomCode);
+  } else if (data.type === 'player') {
+    // Jogador não reconectou, notificar sala
+    console.log(`👋 [JOGADOR NÃO RECONECTOU] ${data.playerName} foi removido da sala ${data.roomCode}`);
+    const room = roomManager.getRoom(data.roomCode);
+    if (room) {
+      io.to(data.roomCode).emit('player_removed', {
+        playerId: data.playerId,
+        playerName: data.playerName,
+        message: `${data.playerName} não reconectou a tempo e foi removido.`,
+        room: roomManager.getRoomPublicData(room)
+      });
+    }
+  }
+};
+
 // Middleware para verificar IP da mesma LAN
 const checkSameLAN = (socket, next) => {
   const clientIP = socket.handshake.address;
@@ -2485,6 +2684,11 @@ io.use(checkSameLAN);
 
 io.on('connection', (socket) => {
   console.log(`Socket conectado: ${socket.id}`);
+  
+  // 🔧 DEBUG: Logar quando qualquer evento é emitido
+  socket.onAny((eventName, ...args) => {
+    console.log(`📡 [SOCKET ${socket.id}] Recebeu evento: ${eventName}`);
+  });
 
   // HOST: Criar sala
   socket.on('create_room', async (data) => {
@@ -2528,22 +2732,85 @@ io.on('connection', (socket) => {
       // Entrar na sala do Socket.io
       socket.join(room.code);
       
+      // 🔧 DEBUG: Verificar se o socket realmente entrou na sala
+      const socketsInRoomAfterCreate = await io.in(room.code).fetchSockets();
+      console.log(`🔍 [CREATE] Socket ${socket.id} entrou na sala ${room.code}`);
+      console.log(`🔍 [CREATE] Sockets na sala agora:`, socketsInRoomAfterCreate.map(s => s.id));
+      console.log(`🔍 [CREATE] Total de sockets: ${socketsInRoomAfterCreate.length}`);
+      
+      const publicRoomData = roomManager.getRoomPublicData(room);
+      
+      console.log(`✅ [BACKEND] Sala ${room.code} criada por ${hostData.name}`);
+      console.log(`✅ [BACKEND] Jogadores na sala após criar:`, publicRoomData.players?.length);
+      console.log(`✅ [BACKEND] Lista de jogadores:`, JSON.stringify(publicRoomData.players, null, 2));
+      
       socket.emit('room_created', {
         roomCode: room.code,
-        room: roomManager.getRoomPublicData(room)
+        room: publicRoomData
       });
 
-      console.log(`Sala ${room.code} criada por ${hostData.name}`);
+      // 🔧 CORREÇÃO BUG 1: NÃO emitir player_joined aqui
+      // O evento será emitido quando o cliente estiver pronto (via 'lobby_ready')
+      
+      console.log(`✅✅✅ [CREATE] Sala criada, aguardando cliente estar pronto para emitir player_joined`);
     } catch (error) {
       console.error('Erro ao criar sala:', error);
       socket.emit('error', { message: 'Erro ao criar sala' });
     }
   });
 
+  // 🆕 NOVO: Cliente pronto para receber eventos (resolve BUG 1)
+  socket.on('lobby_ready', async (data) => {
+    try {
+      const { roomCode } = data;
+      console.log(`✅ [LOBBY READY] Socket ${socket.id} está pronto na sala ${roomCode}`);
+      
+      const playerData = roomManager.getPlayerData(socket.id);
+      if (!playerData) {
+        console.error(`❌ [LOBBY READY] Socket ${socket.id} não encontrado no roomManager`);
+        return;
+      }
+      
+      const room = roomManager.getRoom(roomCode);
+      if (!room) {
+        console.error(`❌ [LOBBY READY] Sala ${roomCode} não encontrada`);
+        return;
+      }
+      
+      // 🔧 IMPORTANTE: Re-adicionar o socket à sala (caso tenha mudado de ID)
+      socket.join(roomCode);
+      console.log(`🔄 [LOBBY READY] Socket ${socket.id} re-adicionado à sala ${roomCode}`);
+      
+      const publicRoomData = roomManager.getRoomPublicData(room);
+      
+      // Emitir estado atual da sala para TODOS
+      console.log(`📤 [LOBBY READY] Emitindo room_updated para toda a sala ${roomCode}`);
+      console.log(`📊 [LOBBY READY] Players na sala:`, publicRoomData.players.length);
+      io.to(roomCode).emit('room_updated', {
+        room: publicRoomData
+      });
+      
+    } catch (error) {
+      console.error('❌ [LOBBY READY] Erro:', error);
+    }
+  });
+
   // JOGADOR: Entrar na sala
-  socket.on('join_room', (data) => {
+  socket.on('join_room', async (data) => {
     try {
       const { roomCode, playerData } = data;
+
+      // Validar profanidade no nickname
+      if (playerData && playerData.name) {
+        const nicknameValidation = validateText(playerData.name, 'nickname');
+        if (!nicknameValidation.valid) {
+          logProfanityAttempt(playerData.name, 'multiplayer_nickname', playerData.userId || 'guest');
+          socket.emit('join_error', { 
+            message: 'Nome de usuário contém linguagem inapropriada. Por favor, escolha outro nome.'
+          });
+          return;
+        }
+      }
 
       const result = roomManager.joinRoom(roomCode, socket.id, playerData);
 
@@ -2555,48 +2822,156 @@ io.on('connection', (socket) => {
       // Entrar na sala do Socket.io
       socket.join(roomCode);
 
+      // 🔧 DEBUG: Verificar quem está na sala
+      const socketsInRoomBeforeEmit = await io.in(roomCode).fetchSockets();
+      console.log(`🔍 [JOIN] Sockets na sala ${roomCode} ANTES de emitir:`, socketsInRoomBeforeEmit.map(s => s.id));
+      console.log(`🔍 [JOIN] Total de sockets na sala: ${socketsInRoomBeforeEmit.length}`);
+
       // Confirmar para o jogador
       socket.emit('room_joined', {
         playerId: result.playerId,
         room: result.room
       });
 
+      console.log(`✅ [BACKEND] ${playerData.name} entrou na sala ${roomCode}`);
+      console.log(`✅ [BACKEND] Total de jogadores agora:`, result.room.players?.length);
+      console.log(`✅ [BACKEND] Lista completa de players:`, JSON.stringify(result.room.players, null, 2));
+
       // Notificar todos na sala
-      io.to(roomCode).emit('player_joined', {
+      const eventData = {
         player: {
           id: result.playerId,
           name: playerData.name,
           avatar: playerData.avatar
         },
         room: result.room
-      });
+      };
+      
+      console.log(`📤 [BACKEND] Emitindo player_joined para sala ${roomCode}...`);
+      console.log(`📤 [BACKEND] Dados do evento:`, JSON.stringify(eventData, null, 2));
+      console.log(`📤 [BACKEND] Emitindo para ${socketsInRoomBeforeEmit.length} sockets`);
+      
+      io.to(roomCode).emit('player_joined', eventData);
 
-      console.log(`${playerData.name} entrou na sala ${roomCode}`);
+      console.log(`✅✅✅ [BACKEND] Evento player_joined emitido para sala ${roomCode}`);
     } catch (error) {
       console.error('Erro ao entrar na sala:', error);
       socket.emit('error', { message: 'Erro ao entrar na sala' });
     }
   });
 
-  // HOST: Iniciar jogo
-  socket.on('start_game', (data) => {
+  // JOGADOR: Reconectar à sala (após F5/refresh)
+  socket.on('reconnect_to_room', (data) => {
+    console.log(`🔄 [RECONEXÃO] Evento recebido no backend:`, data);
+    console.log(`🆔 [RECONEXÃO] Socket ID: ${socket.id}`);
+    
     try {
+      const { roomCode, playerId, playerName, isHost } = data;
+
+      console.log(`📋 [RECONEXÃO] Dados extraídos:`, { roomCode, playerId, playerName, isHost });
+
+      if (!roomCode || !playerId || !playerName) {
+        console.error(`❌ [RECONEXÃO] Dados incompletos:`, { roomCode, playerId, playerName });
+        socket.emit('reconnect_error', { message: 'Dados de reconexão incompletos' });
+        return;
+      }
+
+      console.log(`🔍 [RECONEXÃO] Tentando reconectar ${playerName} à sala ${roomCode}...`);
+      const result = roomManager.reconnectPlayer(roomCode, playerId, socket.id, playerName);
+
+      console.log(`📊 [RECONEXÃO] Resultado do roomManager:`, result);
+
+      if (!result.success) {
+        console.error(`❌ [RECONEXÃO] Falha: ${result.error}`);
+        socket.emit('reconnect_error', { message: result.error });
+        return;
+      }
+
+      // Entrar na sala do Socket.io novamente
+      console.log(`🚪 [RECONEXÃO] Entrando na sala ${roomCode}...`);
+      socket.join(roomCode);
+
+      // Confirmar reconexão para o jogador
+      console.log(`✅ [RECONEXÃO] Emitindo reconnect_success para o jogador`);
+      socket.emit('reconnect_success', {
+        playerId: result.playerId,
+        isHost: result.isHost,
+        room: result.room,
+        currentState: result.currentState
+      });
+
+      // Notificar todos na sala que o jogador reconectou
+      console.log(`📢 [RECONEXÃO] Notificando outros jogadores na sala ${roomCode}`);
+      io.to(roomCode).emit('player_reconnected', {
+        playerId: result.playerId,
+        playerName: playerName,
+        room: result.room
+      });
+
+      console.log(`✅✅✅ [RECONEXÃO] ${playerName} reconectou à sala ${roomCode} com sucesso!`);
+    } catch (error) {
+      console.error('❌❌❌ [RECONEXÃO] Erro ao reconectar à sala:', error);
+      console.error('❌ [RECONEXÃO] Stack trace:', error.stack);
+      socket.emit('reconnect_error', { message: 'Erro ao reconectar à sala: ' + error.message });
+    }
+  });
+
+  // HOST: Iniciar jogo
+  socket.on('start_game', async (data) => {
+    try {
+      console.log(`🎮 [START GAME] Recebido evento start_game:`, data);
       const { roomCode } = data;
       const playerData = roomManager.getPlayerData(socket.id);
 
+      console.log(`🎮 [START GAME] Socket ID: ${socket.id}`);
+      console.log(`🎮 [START GAME] Player Data:`, playerData);
+
       if (!playerData || !playerData.isHost) {
+        console.error(`❌ [START GAME] Socket não é o host!`);
         socket.emit('error', { message: 'Apenas o host pode iniciar o jogo' });
         return;
       }
 
+      // 🔧 CORREÇÃO BUG 2: Garantir que o socket está na sala do Socket.io
+      console.log(`🔧 [START GAME] Garantindo que host está na sala ${roomCode}...`);
+      socket.join(roomCode);
+      
+      // Verificar se realmente entrou
+      const socketsInRoomBefore = await io.in(roomCode).fetchSockets();
+      console.log(`🔍 [START GAME] Sockets na sala ANTES de iniciar:`, socketsInRoomBefore.map(s => s.id));
+      console.log(`🔍 [START GAME] Host ${socket.id} está na sala?`, socketsInRoomBefore.some(s => s.id === socket.id));
+      
+      if (!socketsInRoomBefore.some(s => s.id === socket.id)) {
+        console.error(`❌ [START GAME] ERRO CRÍTICO: Host não está na sala do Socket.io!`);
+        socket.emit('error', { message: 'Erro de sincronização. Recarregue a página.' });
+        return;
+      }
+
+      console.log(`✅ [START GAME] Host verificado, iniciando jogo na sala ${roomCode}...`);
       const result = roomManager.startGame(roomCode);
 
+      console.log(`📊 [START GAME] Resultado do roomManager.startGame:`, result);
+
       if (!result.success) {
+        console.error(`❌ [START GAME] Erro ao iniciar:`, result.error);
         socket.emit('error', { message: result.error });
         return;
       }
 
       const room = roomManager.getRoom(roomCode);
+      
+      console.log(`📋 [START GAME] Room:`, {
+        code: room.code,
+        status: room.status,
+        playerCount: room.players.size,
+        questionCount: room.quizData.questions.length
+      });
+      
+      // 🔧 VERIFICAR: Listar todos os sockets na sala
+      const socketsInRoom = await io.in(roomCode).fetchSockets();
+      console.log(`🔍 [START GAME] Sockets na sala ${roomCode}:`, socketsInRoom.map(s => s.id));
+      console.log(`🔍 [START GAME] Total de sockets na sala: ${socketsInRoom.length}`);
+      console.log(`🔍 [START GAME] Host socket ID: ${socket.id}`);
       
       // Enviar primeira questão (sem resposta correta)
       const question = {
@@ -2604,15 +2979,32 @@ io.on('connection', (socket) => {
         correct_answer: undefined // Não enviar resposta correta
       };
 
-      io.to(roomCode).emit('game_started', {
+      const gameStartedData = {
         questionIndex: 0,
         question: question,
         totalQuestions: room.quizData.questions.length
-      });
+      };
 
-      console.log(`Jogo iniciado na sala ${roomCode}`);
+      console.log(`🚀 [START GAME] Emitindo game_started para sala ${roomCode}...`);
+      console.log(`📤 [START GAME] Dados sendo enviados:`, {
+        questionIndex: gameStartedData.questionIndex,
+        questionText: gameStartedData.question.question_text,
+        totalQuestions: gameStartedData.totalQuestions
+      });
+      
+      // 🔧 CORREÇÃO BUG 2: Emitir para CADA socket individualmente como backup
+      socketsInRoom.forEach(socketInRoom => {
+        console.log(`📤 [START GAME] Emitindo para socket individual: ${socketInRoom.id}`);
+        socketInRoom.emit('game_started', gameStartedData);
+      });
+      
+      // Também emitir broadcast normal
+      io.to(roomCode).emit('game_started', gameStartedData);
+
+      console.log(`✅✅✅ [START GAME] Jogo iniciado e evento emitido para ${socketsInRoom.length} sockets na sala ${roomCode}`);
     } catch (error) {
-      console.error('Erro ao iniciar jogo:', error);
+      console.error('❌❌❌ [START GAME] Erro ao iniciar jogo:', error);
+      console.error('Stack trace:', error.stack);
       socket.emit('error', { message: 'Erro ao iniciar jogo' });
     }
   });
@@ -2654,10 +3046,25 @@ io.on('connection', (socket) => {
       
       io.to(room.host.socketId).emit('player_answered', {
         playerId: playerData.playerId,
-        playerName: player?.name
+        playerName: player?.name,
+        playersAnswered: result.playersAnswered,
+        totalPlayers: result.totalPlayers
       });
 
       console.log(`Resposta submetida na sala ${roomCode}`);
+
+      // 🔧 NOVO: Se todos responderam, notificar a sala inteira
+      if (result.allAnswered) {
+        console.log(`🎯 [TODOS RESPONDERAM] Notificando sala ${roomCode}`);
+        
+        // Enviar leaderboard automaticamente
+        const leaderboard = roomManager.getLeaderboard(roomCode);
+        
+        io.to(roomCode).emit('all_players_answered', {
+          allAnswered: true,
+          leaderboard: leaderboard
+        });
+      }
     } catch (error) {
       console.error('Erro ao submeter resposta:', error);
       socket.emit('error', { message: 'Erro ao submeter resposta' });
@@ -2743,27 +3150,38 @@ io.on('connection', (socket) => {
   });
 
   function handleDisconnect(socket) {
+    console.log(`🔌 [DESCONEXÃO] Socket ${socket.id} desconectando...`);
     const result = roomManager.leaveRoom(socket.id);
     
     if (result) {
-      if (result.hostLeft) {
-        // Host saiu, notificar todos e fechar sala
-        io.to(result.roomCode).emit('room_closed', {
-          message: 'O host encerrou a sala'
-        });
-        
-        // Remover todos da sala
-        io.in(result.roomCode).socketsLeave(result.roomCode);
-      } else if (result.playerId) {
-        // Jogador saiu, notificar sala
+      console.log(`🔌 [DESCONEXÃO] Resultado:`, result);
+      
+      // 🆕 Com grace period, não fechamos a sala imediatamente
+      if (result.hostDisconnected) {
+        // Host desconectou temporariamente, notificar mas não fechar
+        console.log(`⏳ [HOST DESCONECTOU] Host da sala ${result.roomCode} tem ${result.gracePeriod/1000}s para reconectar`);
         const room = roomManager.getRoom(result.roomCode);
         if (room) {
-          io.to(result.roomCode).emit('player_left', {
+          io.to(result.roomCode).emit('host_disconnected', {
+            message: 'O host desconectou. Aguardando reconexão...',
+            gracePeriod: result.gracePeriod
+          });
+        }
+      } else if (result.playerDisconnected) {
+        // Jogador desconectou temporariamente, notificar sala
+        console.log(`⏳ [JOGADOR DESCONECTOU] ${result.playerId} da sala ${result.roomCode} tem ${result.gracePeriod/1000}s para reconectar`);
+        const room = roomManager.getRoom(result.roomCode);
+        if (room) {
+          io.to(result.roomCode).emit('player_disconnected', {
             playerId: result.playerId,
+            message: 'Jogador desconectou. Aguardando reconexão...',
+            gracePeriod: result.gracePeriod,
             room: roomManager.getRoomPublicData(room)
           });
         }
       }
+    } else {
+      console.log(`🔌 [DESCONEXÃO] Socket ${socket.id} não estava em nenhuma sala`);
     }
   }
 });
