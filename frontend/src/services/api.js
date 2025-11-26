@@ -1,7 +1,18 @@
 import axios from 'axios';
 
 // Usar variável de ambiente ou fallback para localhost
-const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+// Validar e limpar a URL para evitar valores malformados
+let apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+
+// Limpar espaços e caracteres inválidos da URL
+apiUrl = apiUrl.trim().replace(/\s+/g, '');
+
+// Validar se a URL está malformada (contém "=" ou espaços)
+if (apiUrl.includes('=') || apiUrl.includes(' ') || !apiUrl.startsWith('http')) {
+  console.warn('⚠️ URL da API malformada detectada:', apiUrl);
+  console.warn('⚠️ Usando URL padrão: http://localhost:3001/api');
+  apiUrl = 'http://localhost:3001/api';
+}
 
 console.log('🌐 API Service inicializado com URL:', apiUrl);
 
