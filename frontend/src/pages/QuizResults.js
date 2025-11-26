@@ -57,13 +57,13 @@ function QuizResults() {
 
   const fetchAttemptData = async () => {
     try {
-      const response = await api.get(`/api/quiz-attempts/${attemptId}`);
+      const response = await api.get(`/quiz-attempts/${attemptId}`);
       if (response.data.attempt) {
         const attempt = response.data.attempt;
         setQuizId(attempt.quiz_id);
         
         // Buscar leaderboard
-        const leaderboardResponse = await api.get(`/api/quizzes/${attempt.quiz_id}/leaderboard?limit=10`);
+        const leaderboardResponse = await api.get(`/quizzes/${attempt.quiz_id}/leaderboard?limit=10`);
         setLeaderboard(leaderboardResponse.data.leaderboard);
       }
     } catch (error) {
