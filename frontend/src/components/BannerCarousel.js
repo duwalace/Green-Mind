@@ -9,7 +9,7 @@ const slides = [
     image: '/banner2.png',
     title: 'Cuidar das cidades para preservar o meio ambiente.',
     description: 'Essa é a missão que a gente compartilha.',
-    button: { text: 'Saiba mais sobre a Ambiental.', link: '#' },
+    button: { text: 'Saiba mais sobre o GreenMind', link: '#' },
     alt: 'Banner sobre cuidados com o meio ambiente'
   },
   {
